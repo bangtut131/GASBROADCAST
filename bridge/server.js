@@ -1,30 +1,19 @@
-/**
- * GasBroadcast Baileys Bridge
- * Express REST API — WAHA-compatible endpoints
- */
-
-// ===== Global error guards (prevent Railway crash on unhandled errors) =====
+// ===== Global error guards =====
 process.on('uncaughtException', (err) => {
-    console.error('[Bridge] Uncaught exception (non-fatal):', err.message);
+    console.error('[Bridge] Uncaught exception:', err.message);
 });
 process.on('unhandledRejection', (reason) => {
-    console.error('[Bridge] Unhandled rejection (non-fatal):', reason);
+    console.error('[Bridge] Unhandled rejection:', reason?.message || reason);
 });
 
-const express = require('express');
-const cors = require('cors');
-
-const {
-    createSession,
-    deleteSession,
-    sendText,
-    sendImage,
-    sendVideo,
-    getSession,
-    getAllSessions,
-    getQR,
+import express from 'express';
+import cors from 'cors';
+import {
+    createSession, deleteSession,
+    sendText, sendImage, sendVideo,
+    getSession, getAllSessions, getQR,
     restorePersistedSessions,
-} = require('./session-manager');
+} from './session-manager.js';
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -33,16 +22,14 @@ const API_SECRET = process.env.API_SECRET || 'bridge-secret';
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// ==================== Auth middleware ====================
-function authMiddleware(req, res, next) {
+// ==================== Auth ====================
+function auth(req, res, next) {
     const key = req.headers['x-api-key'] || req.query.api_key;
-    if (key !== API_SECRET) {
-        return res.status(401).json({ error: 'Unauthorized — invalid API key' });
-    }
+    if (key !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
     next();
 }
 
-// ==================== Health ====================
+// ==================== Health (no auth — Railway uses this) ====================
 app.get('/health', (req, res) => {
     res.json({
         status: 'ok',
@@ -53,14 +40,11 @@ app.get('/health', (req, res) => {
 });
 
 // ==================== Sessions ====================
-
-// List all sessions
-app.get('/api/sessions', authMiddleware, (req, res) => {
+app.get('/api/sessions', auth, (req, res) => {
     res.json({ success: true, data: getAllSessions() });
 });
 
-// Start a new session (or reconnect existing)
-app.post('/api/sessions/start', authMiddleware, async (req, res) => {
+app.post('/api/sessions/start', auth, async (req, res) => {
     try {
         const { sessionId } = req.body;
         if (!sessionId) return res.status(400).json({ error: 'sessionId required' });
@@ -71,97 +55,62 @@ app.post('/api/sessions/start', authMiddleware, async (req, res) => {
     }
 });
 
-// ==================== Per-session routes ====================
-
-// Get QR code (base64 image)
-// WAHA-compatible: GET /api/{session}/auth/qr
-app.get('/api/:session/auth/qr', authMiddleware, (req, res) => {
+// ==================== Per-session ====================
+app.get('/api/:session/auth/qr', auth, (req, res) => {
     const { session } = req.params;
-    const sessionInfo = getSession(session);
-
-    if (!sessionInfo) {
-        return res.status(404).json({ error: 'Session not found. Start it first.' });
-    }
-
-    if (sessionInfo.status === 'connected') {
-        return res.json({ success: true, status: 'connected', qr: null });
-    }
-
+    const info = getSession(session);
+    if (!info) return res.status(404).json({ error: 'Session not found. POST /api/sessions/start first.' });
+    if (info.status === 'connected') return res.json({ success: true, status: 'connected', qr: null });
     const qrBase64 = getQR(session);
-    if (!qrBase64) {
-        // QR not ready yet — tell client to poll
-        return res.json({ success: true, status: sessionInfo.status, qr: null, message: 'QR not ready yet, retry in 2s' });
-    }
-
+    if (!qrBase64) return res.json({ success: true, status: info.status, qr: null, message: 'QR not ready, retry in 2s' });
     res.json({ success: true, status: 'qr', qr: qrBase64 });
 });
 
-// Get session status
-app.get('/api/:session/status', authMiddleware, (req, res) => {
-    const { session } = req.params;
-    const sessionInfo = getSession(session);
-    if (!sessionInfo) return res.status(404).json({ error: 'Session not found' });
-    res.json({ success: true, data: sessionInfo });
+app.get('/api/:session/status', auth, (req, res) => {
+    const info = getSession(req.params.session);
+    if (!info) return res.status(404).json({ error: 'Session not found' });
+    res.json({ success: true, data: info });
 });
 
-// Send text message
-app.post('/api/:session/sendText', authMiddleware, async (req, res) => {
-    const { session } = req.params;
+app.post('/api/:session/sendText', auth, async (req, res) => {
     const { to, text, body } = req.body;
-    const message = text || body;
-    if (!to || !message) return res.status(400).json({ error: 'to and text are required' });
-
-    const result = await sendText(session, to, message);
-    if (!result.success) return res.status(500).json({ error: result.error });
-    res.json({ success: true });
+    const msg = text || body;
+    if (!to || !msg) return res.status(400).json({ error: 'to and text required' });
+    const result = await sendText(req.params.session, to, msg);
+    result.success ? res.json({ success: true }) : res.status(500).json({ error: result.error });
 });
 
-// Send image
-app.post('/api/:session/sendImage', authMiddleware, async (req, res) => {
-    const { session } = req.params;
+app.post('/api/:session/sendImage', auth, async (req, res) => {
     const { to, imageUrl, url, caption } = req.body;
     const mediaUrl = imageUrl || url;
-    if (!to || !mediaUrl) return res.status(400).json({ error: 'to and imageUrl are required' });
-
-    const result = await sendImage(session, to, mediaUrl, caption || '');
-    if (!result.success) return res.status(500).json({ error: result.error });
-    res.json({ success: true });
+    if (!to || !mediaUrl) return res.status(400).json({ error: 'to and imageUrl required' });
+    const result = await sendImage(req.params.session, to, mediaUrl, caption || '');
+    result.success ? res.json({ success: true }) : res.status(500).json({ error: result.error });
 });
 
-// Send video
-app.post('/api/:session/sendVideo', authMiddleware, async (req, res) => {
-    const { session } = req.params;
+app.post('/api/:session/sendVideo', auth, async (req, res) => {
     const { to, videoUrl, url, caption } = req.body;
     const mediaUrl = videoUrl || url;
-    if (!to || !mediaUrl) return res.status(400).json({ error: 'to and videoUrl are required' });
+    if (!to || !mediaUrl) return res.status(400).json({ error: 'to and videoUrl required' });
+    const result = await sendVideo(req.params.session, to, mediaUrl, caption || '');
+    result.success ? res.json({ success: true }) : res.status(500).json({ error: result.error });
+});
 
-    const result = await sendVideo(session, to, mediaUrl, caption || '');
-    if (!result.success) return res.status(500).json({ error: result.error });
+app.post('/api/:session/logout', auth, async (req, res) => {
+    await deleteSession(req.params.session);
     res.json({ success: true });
 });
-
-// Logout & delete session
-app.post('/api/:session/logout', authMiddleware, async (req, res) => {
-    const { session } = req.params;
-    await deleteSession(session);
-    res.json({ success: true, message: 'Session deleted' });
-});
-
-// ==================== Webhook receiver (from Baileys to main app) ====================
-// The bridge also receives internal callbacks here if needed
 
 // ==================== Start ====================
 app.listen(PORT, async () => {
-    console.log('');
-    console.log('  ╔═══════════════════════════════════════╗');
-    console.log('  ║   GasBroadcast — Baileys Bridge 🔗   ║');
-    console.log(`  ║   Port: ${PORT.toString().padEnd(31)}║`);
-    console.log('  ╚═══════════════════════════════════════╝');
-    console.log('');
-    console.log(`  API Secret : ${API_SECRET.substring(0, 6)}...`);
-    console.log(`  Webhook    : ${process.env.WEBHOOK_URL || '(not set)'}`);
-    console.log('');
+    console.log(`\n  GasBroadcast Baileys Bridge 🔗`);
+    console.log(`  Port   : ${PORT}`);
+    console.log(`  Secret : ${API_SECRET.substring(0, 6)}...`);
+    console.log(`  Hook   : ${process.env.WEBHOOK_URL || '(not set)'}\n`);
 
-    // Restore any previously connected sessions on startup
-    await restorePersistedSessions();
+    try {
+        await restorePersistedSessions();
+    } catch (err) {
+        console.error('[Bridge] Session restore error (non-fatal):', err.message);
+    }
 });

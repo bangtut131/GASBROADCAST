@@ -3,6 +3,7 @@
     "version": "1.0.0",
     "description": "Baileys WA Web Bridge — WAHA-compatible API for GasBroadcast",
     "main": "server.js",
+    "type": "module",
     "engines": {
         "node": ">=20.9.0"
     },
