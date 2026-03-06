@@ -1,21 +1,19 @@
 /**
  * GasBroadcast Baileys Bridge
  * Express REST API — WAHA-compatible endpoints
- *
- * Endpoints:
- *   GET  /health
- *   GET  /api/sessions
- *   POST /api/sessions/start          { sessionId }
- *   GET  /api/:session/auth/qr        → { qr: "data:image/png;base64,..." }
- *   GET  /api/:session/status         → { status }
- *   POST /api/:session/sendText       { to, text }
- *   POST /api/:session/sendImage      { to, imageUrl, caption }
- *   POST /api/:session/sendVideo      { to, videoUrl, caption }
- *   POST /api/:session/logout
  */
+
+// ===== Global error guards (prevent Railway crash on unhandled errors) =====
+process.on('uncaughtException', (err) => {
+    console.error('[Bridge] Uncaught exception (non-fatal):', err.message);
+});
+process.on('unhandledRejection', (reason) => {
+    console.error('[Bridge] Unhandled rejection (non-fatal):', reason);
+});
 
 const express = require('express');
 const cors = require('cors');
+
 const {
     createSession,
     deleteSession,
