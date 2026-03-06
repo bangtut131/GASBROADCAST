@@ -41,9 +41,15 @@ export function getProvider(type: WAProviderType, config?: Record<string, string
     } else if (type === 'official') {
         const { OfficialProvider } = require('./official');
         return new OfficialProvider(config);
+    } else if (type === 'wa-web') {
+        // Baileys Bridge uses WAHA-compatible API — reuse WAHAProvider
+        // config.apiUrl points to the bridge service URL
+        const { WAHAProvider } = require('./waha');
+        return new WAHAProvider(config);
     }
     throw new Error(`Unknown WA provider: ${type}`);
 }
+
 
 /* =====================================================
    Helper: Format phone number to WhatsApp format
