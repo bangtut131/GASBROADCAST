@@ -1,15 +1,13 @@
 /**
- * Baileys Session Manager — ESM version
- * Manages multiple WhatsApp Web sessions with QR code support
+ * Baileys Session Manager — v6.x compatible (no makeInMemoryStore)
  */
 
 import makeWASocket, {
     DisconnectReason,
     useMultiFileAuthState,
     fetchLatestBaileysVersion,
-    makeInMemoryStore,
 } from '@whiskeysockets/baileys';
-import { existsSync, mkdirSync, rmSync, readdirSync, statSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, rmSync, readdirSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import pino from 'pino';
@@ -21,7 +19,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const SESSIONS_DIR = process.env.SESSIONS_DIR || join(__dirname, 'sessions');
 const WEBHOOK_URL = process.env.WEBHOOK_URL;
 const API_SECRET = process.env.API_SECRET || 'bridge-secret';
-const logger = pino({ level: 'silent' }); // Suppress Baileys verbose logs
+
+// Silent logger — suppress Baileys verbose output
+const logger = pino({ level: 'silent' });
 
 // In-memory session registry
 const sessions = new Map();
@@ -41,27 +41,51 @@ export async function createSession(sessionId) {
     const sessionDir = join(SESSIONS_DIR, sessionId);
     if (!existsSync(sessionDir)) mkdirSync(sessionDir, { recursive: true });
 
-    const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
-    const { version } = await fetchLatestBaileysVersion();
+    let state, saveCreds;
+    try {
+        const authState = await useMultiFileAuthState(sessionDir);
+        state = authState.state;
+        saveCreds = authState.saveCreds;
+    } catch (e) {
+        console.error(`[${sessionId}] Auth state error:`, e.message);
+        return { status: 'error', error: e.message };
+    }
 
-    const store = makeInMemoryStore({ logger });
-    const storeFile = join(sessionDir, 'store.json');
-    try { store.readFromFile(storeFile); } catch { /* fresh store */ }
+    let version;
+    try {
+        const v = await fetchLatestBaileysVersion();
+        version = v.version;
+    } catch {
+        version = [2, 3000, 1015901307]; // Fallback version
+    }
 
     const sessionData = {
-        sessionId, status: 'starting', qr: null, qrBase64: null,
-        phoneNumber: null, socket: null, store,
+        sessionId,
+        status: 'starting',
+        qr: null,
+        qrBase64: null,
+        phoneNumber: null,
+        socket: null,
     };
     sessions.set(sessionId, sessionData);
 
-    const sock = makeWASocket({
-        version, auth: state, logger,
-        printQRInTerminal: false,
-        browser: ['GasBroadcast', 'Chrome', '120.0.0'],
-        generateHighQualityLinkPreview: false,
-    });
+    let sock;
+    try {
+        sock = makeWASocket({
+            version,
+            auth: state,
+            logger,
+            printQRInTerminal: false,
+            browser: ['GasBroadcast', 'Chrome', '120.0.0'],
+            generateHighQualityLinkPreview: false,
+            connectTimeoutMs: 30000,
+        });
+    } catch (e) {
+        console.error(`[${sessionId}] Socket creation failed:`, e.message);
+        sessions.delete(sessionId);
+        return { status: 'error', error: e.message };
+    }
 
-    store.bind(sock.ev);
     sessionData.socket = sock;
 
     sock.ev.on('creds.update', saveCreds);
@@ -70,11 +94,15 @@ export async function createSession(sessionId) {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
-            const qrBase64 = await QRCode.toDataURL(qr);
-            sessionData.qr = qr;
-            sessionData.qrBase64 = qrBase64;
-            sessionData.status = 'qr';
-            console.log(`[${sessionId}] QR ready — waiting for scan`);
+            try {
+                const qrBase64 = await QRCode.toDataURL(qr);
+                sessionData.qr = qr;
+                sessionData.qrBase64 = qrBase64;
+                sessionData.status = 'qr';
+                console.log(`[${sessionId}] QR ready — scan now`);
+            } catch (e) {
+                console.error(`[${sessionId}] QR generation error:`, e.message);
+            }
         }
 
         if (connection === 'close') {
@@ -83,15 +111,15 @@ export async function createSession(sessionId) {
             console.log(`[${sessionId}] Closed. Code: ${code}. Reconnect: ${shouldReconnect}`);
 
             if (shouldReconnect) {
-                sessionData.status = 'connecting';
+                sessionData.status = 'reconnecting';
                 sessionData.qr = null;
                 sessionData.qrBase64 = null;
-                setTimeout(() => createSession(sessionId), 5000);
+                setTimeout(() => createSession(sessionId).catch(console.error), 5000);
             } else {
                 sessionData.status = 'disconnected';
                 sessions.delete(sessionId);
                 const dir = join(SESSIONS_DIR, sessionId);
-                if (existsSync(dir)) rmSync(dir, { recursive: true });
+                if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
             }
         }
 
@@ -102,14 +130,9 @@ export async function createSession(sessionId) {
             sessionData.qrBase64 = null;
             sessionData.phoneNumber = user?.id ? user.id.split(':')[0] : null;
             console.log(`[${sessionId}] ✅ Connected! +${sessionData.phoneNumber}`);
-
-            // Periodically save store
-            setInterval(() => {
-                try { store.writeToFile(storeFile); } catch { }
-            }, 15_000);
-
             await sendWebhook(sessionId, 'session.connected', {
-                sessionId, phoneNumber: sessionData.phoneNumber,
+                sessionId,
+                phoneNumber: sessionData.phoneNumber,
             });
         }
     });
@@ -151,7 +174,7 @@ export async function deleteSession(sessionId) {
     }
     sessions.delete(sessionId);
     const dir = join(SESSIONS_DIR, sessionId);
-    if (existsSync(dir)) rmSync(dir, { recursive: true });
+    if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
 }
 
 // ==================== Messaging ====================
@@ -201,17 +224,19 @@ export function getQR(sessionId) {
     return sessions.get(sessionId)?.qrBase64 || null;
 }
 
-// ==================== Startup Session Restore ====================
+// ==================== Startup Restore ====================
 
 export async function restorePersistedSessions() {
     if (!existsSync(SESSIONS_DIR)) return;
-    const dirs = readdirSync(SESSIONS_DIR).filter(d => statSync(join(SESSIONS_DIR, d)).isDirectory());
+    const dirs = readdirSync(SESSIONS_DIR).filter(d => {
+        try { return statSync(join(SESSIONS_DIR, d)).isDirectory(); } catch { return false; }
+    });
     if (dirs.length === 0) return;
     console.log(`[Bridge] Restoring ${dirs.length} session(s)...`);
     for (const sessionId of dirs) {
         try {
             await createSession(sessionId);
-            await new Promise(r => setTimeout(r, 1000)); // stagger
+            await new Promise(r => setTimeout(r, 1500));
         } catch (e) {
             console.error(`[Bridge] Restore failed for ${sessionId}:`, e.message);
         }
