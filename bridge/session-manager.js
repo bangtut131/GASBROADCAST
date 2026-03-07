@@ -1,5 +1,6 @@
 /**
- * Baileys Session Manager — v6.x compatible (no makeInMemoryStore)
+ * Baileys Session Manager — v6.x compatible
+ * Fixed: reconnect does NOT delete credentials (was causing QR loop on 515 restartRequired)
  */
 
 import makeWASocket, {
@@ -20,22 +21,33 @@ const SESSIONS_DIR = process.env.SESSIONS_DIR || join(__dirname, 'sessions');
 const WEBHOOK_URL = process.env.WEBHOOK_URL;
 const API_SECRET = process.env.API_SECRET || 'bridge-secret';
 
-// Silent logger — suppress Baileys verbose output
+// Silent logger
 const logger = pino({ level: 'silent' });
 
 // In-memory session registry
 const sessions = new Map();
 
-// Ensure sessions directory exists
 if (!existsSync(SESSIONS_DIR)) mkdirSync(SESSIONS_DIR, { recursive: true });
 
 // ==================== Session Lifecycle ====================
 
+/**
+ * Create (or reconnect) a Baileys session.
+ * IMPORTANT: Does NOT delete credentials on reconnect — preserving auth state
+ * so WhatsApp does not ask for QR again after 515/restartRequired.
+ */
 export async function createSession(sessionId) {
+    // If already connected, skip
     if (sessions.has(sessionId)) {
         const existing = sessions.get(sessionId);
-        if (existing.status === 'connected') return { status: 'already_connected' };
-        await deleteSession(sessionId);
+        if (existing.status === 'connected') {
+            return { status: 'already_connected' };
+        }
+        // Only close the socket — do NOT delete session dir (credentials must survive)
+        if (existing.socket) {
+            try { existing.socket.end(undefined); } catch { }
+        }
+        sessions.delete(sessionId);
     }
 
     const sessionDir = join(SESSIONS_DIR, sessionId);
@@ -55,8 +67,10 @@ export async function createSession(sessionId) {
     try {
         const v = await fetchLatestBaileysVersion();
         version = v.version;
+        console.log(`[${sessionId}] Using WA version: ${version.join('.')}`);
     } catch {
-        version = [2, 3000, 1015901307]; // Fallback version
+        version = [2, 3000, 1023141204]; // Known-good fallback
+        console.log(`[${sessionId}] Using fallback WA version: ${version.join('.')}`);
     }
 
     const sessionData = {
@@ -76,9 +90,13 @@ export async function createSession(sessionId) {
             auth: state,
             logger,
             printQRInTerminal: false,
-            browser: ['GasBroadcast', 'Chrome', '120.0.0'],
+            browser: ['Ubuntu', 'Chrome', '124.0.0'],
             generateHighQualityLinkPreview: false,
-            connectTimeoutMs: 30000,
+            connectTimeoutMs: 60000,
+            keepAliveIntervalMs: 30000,
+            retryRequestDelayMs: 2000,
+            syncFullHistory: false,
+            markOnlineOnConnect: false,
         });
     } catch (e) {
         console.error(`[${sessionId}] Socket creation failed:`, e.message);
@@ -106,20 +124,28 @@ export async function createSession(sessionId) {
         }
 
         if (connection === 'close') {
-            const code = lastDisconnect?.error?.output?.statusCode;
-            const shouldReconnect = code !== DisconnectReason.loggedOut;
-            console.log(`[${sessionId}] Closed. Code: ${code}. Reconnect: ${shouldReconnect}`);
+            const statusCode = lastDisconnect?.error?.output?.statusCode;
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+
+            console.log(`[${sessionId}] Closed. Code: ${statusCode}. Reconnect: ${shouldReconnect}`);
 
             if (shouldReconnect) {
                 sessionData.status = 'reconnecting';
                 sessionData.qr = null;
                 sessionData.qrBase64 = null;
-                setTimeout(() => createSession(sessionId).catch(console.error), 5000);
+                // Reconnect without deleting credentials — auth state is preserved on disk
+                setTimeout(() => {
+                    createSession(sessionId).catch(err =>
+                        console.error(`[${sessionId}] Reconnect failed:`, err.message)
+                    );
+                }, 3000);
             } else {
-                sessionData.status = 'disconnected';
+                // loggedOut — clean up everything
+                console.log(`[${sessionId}] Logged out. Cleaning up.`);
                 sessions.delete(sessionId);
                 const dir = join(SESSIONS_DIR, sessionId);
                 if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
+                await sendWebhook(sessionId, 'session.disconnected', { sessionId });
             }
         }
 
@@ -137,7 +163,6 @@ export async function createSession(sessionId) {
         }
     });
 
-    // Forward inbound messages to main app
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type !== 'notify') return;
         for (const msg of messages) {
@@ -167,6 +192,10 @@ export async function createSession(sessionId) {
     return { status: 'starting', sessionId };
 }
 
+/**
+ * Permanently delete a session (user-initiated logout).
+ * This DOES delete the credentials directory.
+ */
 export async function deleteSession(sessionId) {
     const session = sessions.get(sessionId);
     if (session?.socket) {
@@ -236,7 +265,7 @@ export async function restorePersistedSessions() {
     for (const sessionId of dirs) {
         try {
             await createSession(sessionId);
-            await new Promise(r => setTimeout(r, 1500));
+            await new Promise(r => setTimeout(r, 2000));
         } catch (e) {
             console.error(`[Bridge] Restore failed for ${sessionId}:`, e.message);
         }
