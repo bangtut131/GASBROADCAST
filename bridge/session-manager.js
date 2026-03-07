@@ -253,29 +253,19 @@ export async function sendImage(sessionId, to, imageUrl, caption = '', contacts 
     try {
         const jid = to === 'status@broadcast' ? 'status@broadcast' : formatJid(to);
 
+        let options = {};
         if (jid === 'status@broadcast' && session.socket?.user?.id) {
             const myJid = formatJid(session.socket.user.id.split(':')[0]);
             const statusJids = [myJid, ...contacts.map(c => formatJid(c))];
 
-            const messageObj = await generateWAMessageFromContent(
-                'status@broadcast',
-                {
-                    imageMessage: (await session.socket.sendMessage(myJid, { image: { url: imageUrl }, caption }, { getMessage: true })).message.imageMessage
-                },
-                { userJid: session.socket.user.id }
-            );
-
-            await session.socket.relayMessage('status@broadcast', messageObj.message, {
-                messageId: messageObj.key.id,
+            options = {
                 statusJidList: [...new Set(statusJids)],
                 broadcast: true,
-                additionalAttributes: {}
-            });
-            return { success: true };
+                backgroundColor: '#1E1E1E'
+            };
         }
 
-        // Normal chat
-        await session.socket.sendMessage(jid, { image: { url: imageUrl }, caption });
+        await session.socket.sendMessage(jid, { image: { url: imageUrl }, caption }, options);
         return { success: true };
     } catch (err) { return { success: false, error: err.message }; }
 }
@@ -286,29 +276,19 @@ export async function sendVideo(sessionId, to, videoUrl, caption = '', contacts 
     try {
         const jid = to === 'status@broadcast' ? 'status@broadcast' : formatJid(to);
 
+        let options = {};
         if (jid === 'status@broadcast' && session.socket?.user?.id) {
             const myJid = formatJid(session.socket.user.id.split(':')[0]);
             const statusJids = [myJid, ...contacts.map(c => formatJid(c))];
 
-            const messageObj = await generateWAMessageFromContent(
-                'status@broadcast',
-                {
-                    videoMessage: (await session.socket.sendMessage(myJid, { video: { url: videoUrl }, caption }, { getMessage: true })).message.videoMessage
-                },
-                { userJid: session.socket.user.id }
-            );
-
-            await session.socket.relayMessage('status@broadcast', messageObj.message, {
-                messageId: messageObj.key.id,
+            options = {
                 statusJidList: [...new Set(statusJids)],
                 broadcast: true,
-                additionalAttributes: {}
-            });
-            return { success: true };
+                backgroundColor: '#1E1E1E'
+            };
         }
 
-        // Normal chat
-        await session.socket.sendMessage(jid, { video: { url: videoUrl }, caption });
+        await session.socket.sendMessage(jid, { video: { url: videoUrl }, caption }, options);
         return { success: true };
     } catch (err) { return { success: false, error: err.message }; }
 }
