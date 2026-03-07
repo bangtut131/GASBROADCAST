@@ -121,8 +121,21 @@ export async function GET(request: NextRequest) {
 
         const supabase = await createServiceClient();
         const now = new Date();
-        const currentTime = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
-        const currentDay = now.getDay(); // 0=Sun, 6=Sat
+
+        // Use Asia/Jakarta timezone for all time comparisons
+        const jakartaFormatter = new Intl.DateTimeFormat('en-GB', {
+            timeZone: 'Asia/Jakarta',
+            hour: '2-digit',
+            minute: '2-digit',
+            weekday: 'long',
+        });
+        const parts = jakartaFormatter.formatToParts(now);
+        const currentTime = `${parts.find(p => p.type === 'hour')!.value}:${parts.find(p => p.type === 'minute')!.value}`;
+
+        // Day of week in Jakarta time (0=Sun, 1=Mon, ..., 6=Sat)
+        const jakartaDateStr = now.toLocaleDateString('en-US', { timeZone: 'Asia/Jakarta', weekday: 'short' });
+        const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+        const currentDay = dayMap[jakartaDateStr] ?? now.getDay();
 
         // Get all active schedules
         const { data: schedules } = await supabase
@@ -130,11 +143,17 @@ export async function GET(request: NextRequest) {
             .select('*')
             .eq('is_active', true);
 
+        const [curH, curM] = currentTime.split(':').map(Number);
+        const curMinutes = curH * 60 + curM;
+
         const due = (schedules || []).filter(s => {
-            // Check if current day is in schedule
+            // Check if current day (Jakarta) is in schedule
             if (!s.days_of_week.includes(currentDay)) return false;
-            // Check if current time matches one of the posting times (within 1 min)
-            return s.times_of_day.some((t: string) => t === currentTime);
+            // Check if current time matches one of the posting times (within ±1 min)
+            return s.times_of_day.some((t: string) => {
+                const [h, m] = t.split(':').map(Number);
+                return Math.abs((h * 60 + m) - curMinutes) <= 1;
+            });
         });
 
         return NextResponse.json({ success: true, data: due });
