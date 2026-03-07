@@ -38,8 +38,17 @@ export default function ContactsPage() {
         setSubmitting(true);
         try {
             const { data: { session } } = await supabase.auth.getSession();
-            const tenant_id = session?.user?.user_metadata?.tenant_id;
-            if (!tenant_id) throw new Error('Tenant ID not found');
+            if (!session?.user?.id) throw new Error('User not authenticated');
+
+            // Get tenant_id from profile since user_metadata might be stale/empty
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('tenant_id')
+                .eq('id', session.user.id)
+                .single();
+
+            const tenant_id = profile?.tenant_id;
+            if (!tenant_id) throw new Error('Tenant ID not found in profile');
 
             let formattedPhone = formData.phone.trim();
             if (formattedPhone.startsWith('0')) formattedPhone = '62' + formattedPhone.slice(1);
