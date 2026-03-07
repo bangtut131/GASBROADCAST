@@ -7,15 +7,17 @@ import {
     RefreshCw, AlertCircle, Loader2, Wifi, Zap, Info
 } from 'lucide-react';
 
-type Provider = 'waha' | 'official';
+type Provider = 'waha' | 'official' | 'wa-web';
 type Step = 'provider' | 'config' | 'connecting' | 'done';
 
 export default function DeviceConnectPage() {
     const [step, setStep] = useState<Step>('provider');
-    const [provider, setProvider] = useState<Provider>('waha');
+    const [provider, setProvider] = useState<Provider>('wa-web');
     const [deviceName, setDeviceName] = useState('');
     const [wahaApiUrl, setWahaApiUrl] = useState('http://localhost:3000');
     const [wahaApiKey, setWahaApiKey] = useState('');
+    const [bridgeUrl, setBridgeUrl] = useState(process.env.NEXT_PUBLIC_BRIDGE_URL || '');
+    const [bridgeApiSecret, setBridgeApiSecret] = useState('');
     const [officialAccessToken, setOfficialAccessToken] = useState('');
     const [officialPhoneId, setOfficialPhoneId] = useState('');
     const [loading, setLoading] = useState(false);
@@ -26,9 +28,9 @@ export default function DeviceConnectPage() {
     const qrInterval = useRef<NodeJS.Timeout | null>(null);
     const router = useRouter();
 
-    // Poll QR code every 20s for WAHA
+    // Poll QR code every 5s for WAHA and WA Web (bridge)
     useEffect(() => {
-        if (step === 'connecting' && provider === 'waha' && deviceId) {
+        if (step === 'connecting' && (provider === 'waha' || provider === 'wa-web') && deviceId) {
             fetchQR();
             qrInterval.current = setInterval(() => {
                 fetchQR();
@@ -72,7 +74,9 @@ export default function DeviceConnectPage() {
 
         const providerConfig = provider === 'waha'
             ? { apiUrl: wahaApiUrl, apiKey: wahaApiKey }
-            : { accessToken: officialAccessToken, phoneNumberId: officialPhoneId };
+            : provider === 'wa-web'
+                ? { apiUrl: bridgeUrl, apiKey: bridgeApiSecret }
+                : { accessToken: officialAccessToken, phoneNumberId: officialPhoneId };
 
         try {
             const res = await fetch('/api/devices', {
@@ -126,6 +130,26 @@ export default function DeviceConnectPage() {
                             Pilih provider sesuai kebutuhan Anda. Bisa diganti kapan saja.
                         </p>
                         <div className="provider-cards">
+                            {/* WA Web — recommended, shown first */}
+                            <div
+                                className={`provider-card ${provider === 'wa-web' ? 'selected' : ''}`}
+                                onClick={() => setProvider('wa-web')}
+                            >
+                                <div className="provider-icon" style={{ background: 'rgba(34,197,94,0.15)', color: '#22c55e' }}>
+                                    <QrCode size={24} />
+                                </div>
+                                <div className="provider-info">
+                                    <h4>WA Web (Bridge) ⭐ Recommended</h4>
+                                    <p>Scan QR seperti starsender.id. Langsung konek tanpa server tambahan.</p>
+                                    <div className="flex gap-1" style={{ marginTop: 'var(--space-2)' }}>
+                                        <span className="badge badge-success">Scan QR</span>
+                                        <span className="badge badge-success">Gratis</span>
+                                        <span className="badge badge-accent">Termudah</span>
+                                    </div>
+                                </div>
+                                <div className={`provider-radio ${provider === 'wa-web' ? 'checked' : ''}`} />
+                            </div>
+
                             <div
                                 className={`provider-card ${provider === 'waha' ? 'selected' : ''}`}
                                 onClick={() => setProvider('waha')}
@@ -134,11 +158,11 @@ export default function DeviceConnectPage() {
                                     <Wifi size={24} />
                                 </div>
                                 <div className="provider-info">
-                                    <h4>WAHA (Unofficial)</h4>
-                                    <p>Scan QR Code seperti WhatsApp Web. Gratis, self-hosted, cocok untuk mulai.</p>
+                                    <h4>WAHA (Self-hosted)</h4>
+                                    <p>Scan QR Code. Self-hosted Docker, cocok jika punya server sendiri.</p>
                                     <div className="flex gap-1" style={{ marginTop: 'var(--space-2)' }}>
                                         <span className="badge badge-success">Gratis</span>
-                                        <span className="badge badge-warning">Self-hosted</span>
+                                        <span className="badge badge-warning">Butuh Docker</span>
                                     </div>
                                 </div>
                                 <div className={`provider-radio ${provider === 'waha' ? 'checked' : ''}`} />
@@ -186,6 +210,37 @@ export default function DeviceConnectPage() {
                                     onChange={e => setDeviceName(e.target.value)}
                                 />
                             </div>
+
+                            {provider === 'wa-web' && (
+                                <>
+                                    <div className="info-box" style={{ borderColor: 'rgba(34,197,94,0.3)', background: 'rgba(34,197,94,0.08)' }}>
+                                        <Info size={16} style={{ flexShrink: 0, color: '#22c55e' }} />
+                                        <span>Bridge URL sudah diisi otomatis. Cukup masukkan API Secret yang sama dengan yang Anda set di Railway bridge service.</span>
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Bridge URL *</label>
+                                        <input
+                                            type="text"
+                                            className="form-input"
+                                            placeholder="https://your-bridge.up.railway.app"
+                                            value={bridgeUrl}
+                                            onChange={e => setBridgeUrl(e.target.value)}
+                                        />
+                                        <span className="form-hint">URL service bridge Baileys di Railway</span>
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">API Secret *</label>
+                                        <input
+                                            type="password"
+                                            className="form-input"
+                                            placeholder="gasbroadcast_bridge_2026"
+                                            value={bridgeApiSecret}
+                                            onChange={e => setBridgeApiSecret(e.target.value)}
+                                        />
+                                        <span className="form-hint">Sama dengan API_SECRET di environment bridge</span>
+                                    </div>
+                                </>
+                            )}
 
                             {provider === 'waha' && (
                                 <>
@@ -259,7 +314,7 @@ export default function DeviceConnectPage() {
                 {/* STEP 3: QR / Connecting */}
                 {step === 'connecting' && (
                     <div className="step-content" style={{ textAlign: 'center' }}>
-                        {provider === 'waha' ? (
+                        {(provider === 'waha' || provider === 'wa-web') ? (
                             <>
                                 <h3 className="step-title">Scan QR Code</h3>
                                 <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-6)' }}>
@@ -276,13 +331,13 @@ export default function DeviceConnectPage() {
                                         <div className="qr-loading">
                                             <Loader2 size={32} className="animate-spin" style={{ color: 'var(--color-accent)' }} />
                                             <p style={{ marginTop: 'var(--space-3)', color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>
-                                                Mengambil QR Code...
+                                                {provider === 'wa-web' ? 'Memulai sesi WA Web...' : 'Mengambil QR Code...'}
                                             </p>
                                         </div>
                                     )}
                                 </div>
                                 <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginTop: 'var(--space-4)' }}>
-                                    QR otomatis diperbarui setiap 20 detik
+                                    QR otomatis diperbarui setiap 5 detik
                                 </p>
                                 <button className="btn btn-secondary btn-sm" style={{ marginTop: 'var(--space-3)' }} onClick={fetchQR}>
                                     <RefreshCw size={14} /> Refresh QR
