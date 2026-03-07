@@ -216,7 +216,13 @@ export async function sendText(sessionId, to, text) {
         const content = jid === 'status@broadcast'
             ? { text, backgroundColor: '#1D4ED8', font: 2 }  // WA Status text format
             : { text };
-        await session.socket.sendMessage(jid, content);
+
+        // WA Status requires statusJidList
+        const options = jid === 'status@broadcast' && session.socket?.user?.id
+            ? { statusJidList: [formatJid(session.socket.user.id.split(':')[0])] }
+            : {};
+
+        await session.socket.sendMessage(jid, content, options);
         return { success: true };
     } catch (err) { return { success: false, error: err.message }; }
 }
@@ -226,7 +232,12 @@ export async function sendImage(sessionId, to, imageUrl, caption = '') {
     if (!session || session.status !== 'connected') return { success: false, error: 'Not connected' };
     try {
         const jid = to === 'status@broadcast' ? 'status@broadcast' : formatJid(to);
-        await session.socket.sendMessage(jid, { image: { url: imageUrl }, caption });
+
+        const options = jid === 'status@broadcast' && session.socket?.user?.id
+            ? { statusJidList: [formatJid(session.socket.user.id.split(':')[0])] }
+            : {};
+
+        await session.socket.sendMessage(jid, { image: { url: imageUrl }, caption }, options);
         return { success: true };
     } catch (err) { return { success: false, error: err.message }; }
 }
@@ -236,7 +247,12 @@ export async function sendVideo(sessionId, to, videoUrl, caption = '') {
     if (!session || session.status !== 'connected') return { success: false, error: 'Not connected' };
     try {
         const jid = to === 'status@broadcast' ? 'status@broadcast' : formatJid(to);
-        await session.socket.sendMessage(jid, { video: { url: videoUrl }, caption });
+
+        const options = jid === 'status@broadcast' && session.socket?.user?.id
+            ? { statusJidList: [formatJid(session.socket.user.id.split(':')[0])] }
+            : {};
+
+        await session.socket.sendMessage(jid, { video: { url: videoUrl }, caption }, options);
         return { success: true };
     } catch (err) { return { success: false, error: err.message }; }
 }
