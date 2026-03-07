@@ -181,19 +181,24 @@ async function pickContent(supabase: any, schedule: any) {
 
     // Cooldown: exclude content used in last X days
     if (schedule.cooldown_days > 0) {
-        const cooldownSince = new Date();
-        cooldownSince.setDate(cooldownSince.getDate() - schedule.cooldown_days);
-        query = query.or(`last_used_at.is.null,last_used_at.lt.${cooldownSince.toISOString()}`);
+        const cooldownBoundary = new Date();
+        cooldownBoundary.setDate(cooldownBoundary.getDate() - schedule.cooldown_days);
+        // last_used_at is null OR last_used_at < cooldownBoundary
+        query = query.or(`last_used_at.is.null,last_used_at.lt.${cooldownBoundary.toISOString()}`);
     }
 
     if (schedule.mode === 'sequence') {
         query = query.order('created_at', { ascending: true });
     } else {
-        // Random mode — get all and pick random
-        query = query.order('use_count', { ascending: true }); // prefer least used
+        // Random mode — rank by least used first
+        query = query.order('use_count', { ascending: true });
     }
 
-    const { data: eligible } = await query;
+    let { data: eligible, error } = await query;
+    if (error) {
+        console.error('[wa-status/post] Query error getting content:', error);
+        return null;
+    }
     if (!eligible || eligible.length === 0) return null;
 
     if (schedule.mode === 'sequence') {
