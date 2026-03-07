@@ -168,37 +168,35 @@ async function pickContent(supabase: any, schedule: any) {
     const categoryFilter = schedule.category_ids?.length > 0
         ? schedule.category_ids : null;
 
-    // Get eligible content (excluding recently used based on cooldown)
-    let query = supabase
-        .from('status_contents')
-        .select('*')
-        .eq('tenant_id', schedule.tenant_id)
-        .eq('is_active', true);
+    // First pass: Try to find content respecting the cooldown setup
+    let query = supabase.from('status_contents').select('*').eq('tenant_id', schedule.tenant_id).eq('is_active', true);
+    if (categoryFilter) query = query.in('category_id', categoryFilter);
 
-    if (categoryFilter) {
-        query = query.in('category_id', categoryFilter);
-    }
-
-    // Cooldown: exclude content used in last X days
     if (schedule.cooldown_days > 0) {
         const cooldownBoundary = new Date();
         cooldownBoundary.setDate(cooldownBoundary.getDate() - schedule.cooldown_days);
-        // last_used_at is null OR last_used_at < cooldownBoundary
         query = query.or(`last_used_at.is.null,last_used_at.lt.${cooldownBoundary.toISOString()}`);
     }
 
-    if (schedule.mode === 'sequence') {
-        query = query.order('created_at', { ascending: true });
-    } else {
-        // Random mode — rank by least used first
-        query = query.order('use_count', { ascending: true });
-    }
+    if (schedule.mode === 'sequence') query = query.order('created_at', { ascending: true });
+    else query = query.order('use_count', { ascending: true });
 
     let { data: eligible, error } = await query;
-    if (error) {
-        console.error('[wa-status/post] Query error getting content:', error);
-        return null;
+    if (error) console.error('[wa-status/post] Query error getting content:', error);
+
+    // Second pass: If NO content is available because of cooldown, ignore cooldown
+    // Better to post repeated content than throw "No content available" error
+    if (!eligible || eligible.length === 0) {
+        let fallbackQuery = supabase.from('status_contents').select('*').eq('tenant_id', schedule.tenant_id).eq('is_active', true);
+        if (categoryFilter) fallbackQuery = fallbackQuery.in('category_id', categoryFilter);
+
+        if (schedule.mode === 'sequence') fallbackQuery = fallbackQuery.order('created_at', { ascending: true });
+        else fallbackQuery = fallbackQuery.order('use_count', { ascending: true });
+
+        const { data: fallback } = await fallbackQuery;
+        eligible = fallback || [];
     }
+
     if (!eligible || eligible.length === 0) return null;
 
     if (schedule.mode === 'sequence') {
