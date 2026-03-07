@@ -43,6 +43,12 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'name and provider are required' }, { status: 400 });
         }
 
+        // Normalize apiUrl — ensure it has https:// protocol
+        const normalizedConfig = { ...provider_config };
+        if (normalizedConfig?.apiUrl && !normalizedConfig.apiUrl.startsWith('http')) {
+            normalizedConfig.apiUrl = 'https://' + normalizedConfig.apiUrl;
+        }
+
         // Generate session ID
         const sessionId = `${profile.tenant_id.substring(0, 8)}-${Date.now()}`;
 
@@ -53,7 +59,7 @@ export async function POST(request: NextRequest) {
                 tenant_id: profile.tenant_id,
                 name,
                 provider,
-                provider_config: provider_config || {},
+                provider_config: normalizedConfig || {},
                 session_id: (provider === 'waha' || provider === 'wa-web') ? sessionId : (provider_config?.phoneNumberId || ''),
                 status: 'qr_pending',
             })

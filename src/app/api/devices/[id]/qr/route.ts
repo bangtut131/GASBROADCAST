@@ -25,7 +25,9 @@ export async function GET(
         }
 
         const cfg = device.provider_config as any;
-        const apiUrl = (cfg?.apiUrl || '').replace(/\/$/, '');
+        let apiUrl = (cfg?.apiUrl || '').replace(/\/$/, '');
+        // Ensure URL has protocol — user might have entered without https://
+        if (apiUrl && !apiUrl.startsWith('http')) apiUrl = 'https://' + apiUrl;
         const apiKey = cfg?.apiKey || '';
         const sessionId = device.session_id;
 
