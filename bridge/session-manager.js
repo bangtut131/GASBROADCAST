@@ -7,6 +7,7 @@ import makeWASocket, {
     DisconnectReason,
     useMultiFileAuthState,
     fetchLatestBaileysVersion,
+    generateWAMessageFromContent
 } from '@whiskeysockets/baileys';
 import { existsSync, mkdirSync, rmSync, readdirSync, statSync } from 'fs';
 import { join, dirname } from 'path';
@@ -208,51 +209,106 @@ export async function deleteSession(sessionId) {
 
 // ==================== Messaging ====================
 
-export async function sendText(sessionId, to, text) {
+export async function sendText(sessionId, to, text, contacts = []) {
     const session = sessions.get(sessionId);
     if (!session || session.status !== 'connected') return { success: false, error: 'Not connected' };
     try {
         const jid = to === 'status@broadcast' ? 'status@broadcast' : formatJid(to);
-        const content = jid === 'status@broadcast'
-            ? { text, backgroundColor: '#1D4ED8', font: 2 }  // WA Status text format
-            : { text };
 
-        // WA Status requires statusJidList
-        const options = jid === 'status@broadcast' && session.socket?.user?.id
-            ? { statusJidList: [formatJid(session.socket.user.id.split(':')[0])] }
-            : {};
+        if (jid === 'status@broadcast' && session.socket?.user?.id) {
+            // Low-level construct for WA Status to bypass Baileys dropping
+            const myJid = formatJid(session.socket.user.id.split(':')[0]);
+            const statusJids = [myJid, ...contacts.map(c => formatJid(c))];
 
-        await session.socket.sendMessage(jid, content, options);
+            const messageObj = await generateWAMessageFromContent(
+                'status@broadcast',
+                {
+                    extendedTextMessage: {
+                        text,
+                        backgroundArgb: 4280194884, // Standard dark green
+                        font: 1
+                    }
+                },
+                { userJid: session.socket.user.id }
+            );
+
+            await session.socket.relayMessage('status@broadcast', messageObj.message, {
+                messageId: messageObj.key.id,
+                statusJidList: [...new Set(statusJids)],
+                broadcast: true,
+                additionalAttributes: {}
+            });
+            return { success: true };
+        }
+
+        // Normal chat
+        await session.socket.sendMessage(jid, { text });
         return { success: true };
     } catch (err) { return { success: false, error: err.message }; }
 }
 
-export async function sendImage(sessionId, to, imageUrl, caption = '') {
+export async function sendImage(sessionId, to, imageUrl, caption = '', contacts = []) {
     const session = sessions.get(sessionId);
     if (!session || session.status !== 'connected') return { success: false, error: 'Not connected' };
     try {
         const jid = to === 'status@broadcast' ? 'status@broadcast' : formatJid(to);
 
-        const options = jid === 'status@broadcast' && session.socket?.user?.id
-            ? { statusJidList: [formatJid(session.socket.user.id.split(':')[0])] }
-            : {};
+        if (jid === 'status@broadcast' && session.socket?.user?.id) {
+            const myJid = formatJid(session.socket.user.id.split(':')[0]);
+            const statusJids = [myJid, ...contacts.map(c => formatJid(c))];
 
-        await session.socket.sendMessage(jid, { image: { url: imageUrl }, caption }, options);
+            const messageObj = await generateWAMessageFromContent(
+                'status@broadcast',
+                {
+                    imageMessage: (await session.socket.sendMessage(myJid, { image: { url: imageUrl }, caption }, { getMessage: true })).message.imageMessage
+                },
+                { userJid: session.socket.user.id }
+            );
+
+            await session.socket.relayMessage('status@broadcast', messageObj.message, {
+                messageId: messageObj.key.id,
+                statusJidList: [...new Set(statusJids)],
+                broadcast: true,
+                additionalAttributes: {}
+            });
+            return { success: true };
+        }
+
+        // Normal chat
+        await session.socket.sendMessage(jid, { image: { url: imageUrl }, caption });
         return { success: true };
     } catch (err) { return { success: false, error: err.message }; }
 }
 
-export async function sendVideo(sessionId, to, videoUrl, caption = '') {
+export async function sendVideo(sessionId, to, videoUrl, caption = '', contacts = []) {
     const session = sessions.get(sessionId);
     if (!session || session.status !== 'connected') return { success: false, error: 'Not connected' };
     try {
         const jid = to === 'status@broadcast' ? 'status@broadcast' : formatJid(to);
 
-        const options = jid === 'status@broadcast' && session.socket?.user?.id
-            ? { statusJidList: [formatJid(session.socket.user.id.split(':')[0])] }
-            : {};
+        if (jid === 'status@broadcast' && session.socket?.user?.id) {
+            const myJid = formatJid(session.socket.user.id.split(':')[0]);
+            const statusJids = [myJid, ...contacts.map(c => formatJid(c))];
 
-        await session.socket.sendMessage(jid, { video: { url: videoUrl }, caption }, options);
+            const messageObj = await generateWAMessageFromContent(
+                'status@broadcast',
+                {
+                    videoMessage: (await session.socket.sendMessage(myJid, { video: { url: videoUrl }, caption }, { getMessage: true })).message.videoMessage
+                },
+                { userJid: session.socket.user.id }
+            );
+
+            await session.socket.relayMessage('status@broadcast', messageObj.message, {
+                messageId: messageObj.key.id,
+                statusJidList: [...new Set(statusJids)],
+                broadcast: true,
+                additionalAttributes: {}
+            });
+            return { success: true };
+        }
+
+        // Normal chat
+        await session.socket.sendMessage(jid, { video: { url: videoUrl }, caption });
         return { success: true };
     } catch (err) { return { success: false, error: err.message }; }
 }
