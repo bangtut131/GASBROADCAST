@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
                 name,
                 provider,
                 provider_config: provider_config || {},
-                session_id: provider === 'waha' ? sessionId : (provider_config?.phoneNumberId || ''),
+                session_id: (provider === 'waha' || provider === 'wa-web') ? sessionId : (provider_config?.phoneNumberId || ''),
                 status: 'qr_pending',
             })
             .select()
@@ -62,20 +62,20 @@ export async function POST(request: NextRequest) {
 
         if (insertError) throw insertError;
 
-        // If WAHA: create session and get QR
-        if (provider === 'waha') {
+        // If WAHA or WA Web (bridge): create session and wait for QR
+        if (provider === 'waha' || provider === 'wa-web') {
             try {
-                const waProvider = getProvider('waha', {
+                const waProvider = getProvider(provider as any, {
                     apiUrl: provider_config?.apiUrl,
                     apiKey: provider_config?.apiKey,
                 });
-
-                await waProvider.createSession({ provider: 'waha', name: sessionId });
+                await waProvider.createSession({ provider, name: sessionId });
             } catch (waError: any) {
-                // Don't fail if WAHA not running yet - user can reconnect later
-                console.warn('WAHA session creation failed:', waError.message);
+                // Non-fatal: user can retry QR later
+                console.warn(`${provider} session creation failed:`, waError.message);
             }
         }
+
 
         return NextResponse.json({ success: true, data: device });
     } catch (error: any) {
