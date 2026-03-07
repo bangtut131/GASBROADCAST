@@ -127,6 +127,36 @@ app.post('/api/:session/logout', auth, async (req, res) => {
     res.json({ success: true });
 });
 
+// ==================== WAHA-compatible flat endpoints ====================
+// These match the WAHAProvider request format: { session, chatId, text/file, caption }
+// Required for wa-status posting and regular messaging
+
+app.post('/api/sendText', auth, async (req, res) => {
+    const { session, chatId, text, body: bodyText } = req.body;
+    const msg = text || bodyText;
+    if (!session || !chatId || !msg) return res.status(400).json({ error: 'session, chatId and text required' });
+    const result = await sendText(session, chatId, msg);
+    result.success ? res.json({ success: true }) : res.status(500).json({ error: result.error });
+});
+
+app.post('/api/sendImage', auth, async (req, res) => {
+    const { session, chatId, to, file, imageUrl, caption } = req.body;
+    const mediaUrl = file?.url || imageUrl;
+    const recipient = chatId || to;
+    if (!session || !recipient || !mediaUrl) return res.status(400).json({ error: 'session, chatId and file.url required' });
+    const result = await sendImage(session, recipient, mediaUrl, caption || '');
+    result.success ? res.json({ success: true }) : res.status(500).json({ error: result.error });
+});
+
+app.post('/api/sendVideo', auth, async (req, res) => {
+    const { session, chatId, to, file, videoUrl, caption } = req.body;
+    const mediaUrl = file?.url || videoUrl;
+    const recipient = chatId || to;
+    if (!session || !recipient || !mediaUrl) return res.status(400).json({ error: 'session, chatId and file.url required' });
+    const result = await sendVideo(session, recipient, mediaUrl, caption || '');
+    result.success ? res.json({ success: true }) : res.status(500).json({ error: result.error });
+});
+
 // ==================== Start ====================
 app.listen(PORT, async () => {
     console.log(`\n  GasBroadcast Baileys Bridge 🔗`);

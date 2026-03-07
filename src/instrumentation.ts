@@ -22,25 +22,45 @@ export async function register() {
     // Runs every minute, checks if any WA status schedules are due (in WIB)
     cron.schedule('* * * * *', async () => {
         try {
+            // Step 1: GET — which schedules are due right now?
             const res = await fetch(`${appUrl}/api/wa-status/post`, {
                 method: 'GET',
                 headers: {
                     'x-cron-secret': cronSecret,
                     'Content-Type': 'application/json',
                 },
-                signal: AbortSignal.timeout(30000),
+                signal: AbortSignal.timeout(10000),
             });
 
-            if (!res.ok) {
-                const txt = await res.text();
-                console.error('[Cron] wa-status/post error:', res.status, txt.slice(0, 100));
-                return;
-            }
+            if (!res.ok) return;
 
             const data = await res.json();
-            const due = data?.data || [];
-            if (due.length > 0) {
-                console.log(`[Cron] wa-status: ${due.length} schedule(s) triggered`);
+            const due: { id: string }[] = data?.data || [];
+
+            if (due.length === 0) return;
+            console.log(`[Cron] wa-status: ${due.length} schedule(s) due — posting now`);
+
+            // Step 2: POST for each due schedule to trigger actual posting
+            for (const schedule of due) {
+                try {
+                    const postRes = await fetch(`${appUrl}/api/wa-status/post`, {
+                        method: 'POST',
+                        headers: {
+                            'x-cron-secret': cronSecret,
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ schedule_id: schedule.id }),
+                        signal: AbortSignal.timeout(30000),
+                    });
+                    const postData = await postRes.json();
+                    if (postData.success) {
+                        console.log(`[Cron] ✅ Posted schedule ${schedule.id}`);
+                    } else {
+                        console.error(`[Cron] ❌ Failed schedule ${schedule.id}:`, postData.error);
+                    }
+                } catch (err: any) {
+                    console.error(`[Cron] Error posting schedule ${schedule.id}:`, err?.message);
+                }
             }
         } catch (err: any) {
             if (err?.name !== 'TimeoutError') {
