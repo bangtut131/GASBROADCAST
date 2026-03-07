@@ -21,10 +21,10 @@ export interface WAProvider {
     getQRCode(sessionId: string): Promise<string>; // returns base64 QR image or pairing code
 
     // Messaging
-    sendText(sessionId: string, to: string, text: string): Promise<SendResult>;
-    sendImage(sessionId: string, to: string, imageUrl: string, caption?: string): Promise<SendResult>;
+    sendText(sessionId: string, to: string, text: string, contacts?: string[]): Promise<SendResult>;
+    sendImage(sessionId: string, to: string, imageUrl: string, caption?: string, contacts?: string[]): Promise<SendResult>;
     sendDocument(sessionId: string, to: string, docUrl: string, filename: string): Promise<SendResult>;
-    sendVideo(sessionId: string, to: string, videoUrl: string, caption?: string): Promise<SendResult>;
+    sendVideo(sessionId: string, to: string, videoUrl: string, caption?: string, contacts?: string[]): Promise<SendResult>;
 
     // Webhooks
     handleWebhook(payload: unknown): ParsedEvent | null;

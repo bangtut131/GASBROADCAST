@@ -60,15 +60,26 @@ export async function POST(request: NextRequest) {
 
         // Post to WA Status via provider
         const provider = getProvider(device.provider, device.provider_config as Record<string, string>);
+
+        // Fetch tenant contacts to distribute the status to
+        // WA Status requires a list of JIDs (contacts) to receive the broadcast properly, especially on Business accounts
+        const { data: contacts } = await supabase
+            .from('contacts')
+            .select('phone')
+            .eq('tenant_id', device.tenant_id)
+            .limit(2000);
+
+        const contactPhones = (contacts || []).map(c => c.phone);
+
         let result;
 
         if (content.type === 'image') {
-            result = await provider.sendImage(device.session_id, STATUS_CHAT_ID, content.content_url, caption);
+            result = await provider.sendImage(device.session_id, STATUS_CHAT_ID, content.content_url, caption, contactPhones);
         } else if (content.type === 'video') {
-            result = await provider.sendVideo(device.session_id, STATUS_CHAT_ID, content.content_url, caption);
+            result = await provider.sendVideo(device.session_id, STATUS_CHAT_ID, content.content_url, caption, contactPhones);
         } else {
             // Text status
-            result = await provider.sendText(device.session_id, STATUS_CHAT_ID, caption || content.caption || '');
+            result = await provider.sendText(device.session_id, STATUS_CHAT_ID, caption || content.caption || '', contactPhones);
         }
 
         // Log the result

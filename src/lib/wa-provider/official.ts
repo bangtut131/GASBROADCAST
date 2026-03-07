@@ -83,7 +83,7 @@ export class OfficialProvider implements WAProvider {
         return '';
     }
 
-    async sendText(sessionId: string, to: string, text: string): Promise<SendResult> {
+    async sendText(sessionId: string, to: string, text: string, contacts?: string[]): Promise<SendResult> {
         try {
             const phoneNumberId = sessionId;
             const data = await this.request('POST', `/${phoneNumberId}/messages`, {
@@ -99,7 +99,7 @@ export class OfficialProvider implements WAProvider {
         }
     }
 
-    async sendImage(sessionId: string, to: string, imageUrl: string, caption?: string): Promise<SendResult> {
+    async sendImage(sessionId: string, to: string, imageUrl: string, caption?: string, contacts?: string[]): Promise<SendResult> {
         try {
             const data = await this.request('POST', `/${sessionId}/messages`, {
                 messaging_product: 'whatsapp',
@@ -129,7 +129,7 @@ export class OfficialProvider implements WAProvider {
         }
     }
 
-    async sendVideo(sessionId: string, to: string, videoUrl: string, caption?: string): Promise<SendResult> {
+    async sendVideo(sessionId: string, to: string, videoUrl: string, caption?: string, contacts?: string[]): Promise<SendResult> {
         try {
             const data = await this.request('POST', `/${sessionId}/messages`, {
                 messaging_product: 'whatsapp',

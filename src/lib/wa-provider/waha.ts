@@ -99,13 +99,14 @@ export class WAHAProvider implements WAProvider {
         return data?.qr || '';
     }
 
-    async sendText(sessionId: string, to: string, text: string): Promise<SendResult> {
+    async sendText(sessionId: string, to: string, text: string, contacts?: string[]): Promise<SendResult> {
         try {
             const chatId = to.includes('@') ? to : `${to}@c.us`;
             const data = await this.request('POST', '/api/sendText', {
                 session: sessionId,
                 chatId,
                 text,
+                contacts,
             });
             return { success: true, messageId: data?.id };
         } catch (error: any) {
@@ -113,7 +114,7 @@ export class WAHAProvider implements WAProvider {
         }
     }
 
-    async sendImage(sessionId: string, to: string, imageUrl: string, caption?: string): Promise<SendResult> {
+    async sendImage(sessionId: string, to: string, imageUrl: string, caption?: string, contacts?: string[]): Promise<SendResult> {
         try {
             const chatId = to.includes('@') ? to : `${to}@c.us`;
             const data = await this.request('POST', '/api/sendImage', {
@@ -121,6 +122,7 @@ export class WAHAProvider implements WAProvider {
                 chatId,
                 file: { url: imageUrl },
                 caption,
+                contacts,
             });
             return { success: true, messageId: data?.id };
         } catch (error: any) {
