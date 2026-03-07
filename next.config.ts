@@ -3,11 +3,8 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   // Force all pages to be server-rendered dynamically (not statically generated)
-  // This prevents build failures when env vars (Supabase keys) are not available at build time
   // Required for Railway deployment where env vars are only available at runtime
-  experimental: {
-    // Allow build to succeed even if some pages can't be pre-rendered
-  },
+  experimental: {},
 };
 
 // Suppress static generation for all pages at build time
