@@ -135,6 +135,12 @@ export default function WAStatusPage() {
         setSchedules(prev => prev.map(s => s.id === id ? { ...s, is_active: !current } : s));
     };
 
+    const deleteSchedule = async (id: string) => {
+        if (!confirm('Hapus jadwal ini? Riwayat posting tidak akan dihapus.')) return;
+        await fetch(`/api/wa-status/schedules/${id}`, { method: 'DELETE' });
+        setSchedules(prev => prev.filter(s => s.id !== id));
+    };
+
     const deleteContent = async (id: string) => {
         if (!confirm('Hapus konten ini?')) return;
         await fetch(`/api/wa-status/contents/${id}`, { method: 'DELETE' });
@@ -340,6 +346,9 @@ export default function WAStatusPage() {
                                             </button>
                                             <button className={`btn btn-sm ${s.is_active ? 'btn-secondary' : 'btn-ghost'}`} onClick={() => toggleSchedule(s.id, s.is_active)}>
                                                 <Power size={14} /> {s.is_active ? 'Nonaktifkan' : 'Aktifkan'}
+                                            </button>
+                                            <button className="btn btn-sm btn-ghost" style={{ color: 'var(--color-danger)' }} onClick={() => deleteSchedule(s.id)} title="Hapus jadwal">
+                                                <Trash2 size={14} /> Hapus
                                             </button>
                                         </div>
                                     </div>

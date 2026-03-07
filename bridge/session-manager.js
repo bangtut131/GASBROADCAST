@@ -212,7 +212,11 @@ export async function sendText(sessionId, to, text) {
     const session = sessions.get(sessionId);
     if (!session || session.status !== 'connected') return { success: false, error: 'Not connected' };
     try {
-        await session.socket.sendMessage(formatJid(to), { text });
+        const jid = to === 'status@broadcast' ? 'status@broadcast' : formatJid(to);
+        const content = jid === 'status@broadcast'
+            ? { text, backgroundColor: '#1D4ED8', font: 2 }  // WA Status text format
+            : { text };
+        await session.socket.sendMessage(jid, content);
         return { success: true };
     } catch (err) { return { success: false, error: err.message }; }
 }
@@ -221,7 +225,8 @@ export async function sendImage(sessionId, to, imageUrl, caption = '') {
     const session = sessions.get(sessionId);
     if (!session || session.status !== 'connected') return { success: false, error: 'Not connected' };
     try {
-        await session.socket.sendMessage(formatJid(to), { image: { url: imageUrl }, caption });
+        const jid = to === 'status@broadcast' ? 'status@broadcast' : formatJid(to);
+        await session.socket.sendMessage(jid, { image: { url: imageUrl }, caption });
         return { success: true };
     } catch (err) { return { success: false, error: err.message }; }
 }
@@ -230,7 +235,8 @@ export async function sendVideo(sessionId, to, videoUrl, caption = '') {
     const session = sessions.get(sessionId);
     if (!session || session.status !== 'connected') return { success: false, error: 'Not connected' };
     try {
-        await session.socket.sendMessage(formatJid(to), { video: { url: videoUrl }, caption });
+        const jid = to === 'status@broadcast' ? 'status@broadcast' : formatJid(to);
+        await session.socket.sendMessage(jid, { video: { url: videoUrl }, caption });
         return { success: true };
     } catch (err) { return { success: false, error: err.message }; }
 }
