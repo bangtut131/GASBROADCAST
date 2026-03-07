@@ -216,10 +216,6 @@ export async function sendText(sessionId, to, text, contacts = []) {
         const jid = to === 'status@broadcast' ? 'status@broadcast' : formatJid(to);
 
         if (jid === 'status@broadcast' && session.socket?.user?.id) {
-            // Low-level construct for WA Status to bypass Baileys dropping
-            const myJid = formatJid(session.socket.user.id.split(':')[0]);
-            const statusJids = [myJid, ...contacts.map(c => formatJid(c))];
-
             const messageObj = await generateWAMessageFromContent(
                 'status@broadcast',
                 {
@@ -234,7 +230,6 @@ export async function sendText(sessionId, to, text, contacts = []) {
 
             await session.socket.relayMessage('status@broadcast', messageObj.message, {
                 messageId: messageObj.key.id,
-                statusJidList: [...new Set(statusJids)],
                 broadcast: true,
                 additionalAttributes: {}
             });
@@ -254,12 +249,8 @@ export async function sendImage(sessionId, to, imageUrl, caption = '', contacts 
         const jid = to === 'status@broadcast' ? 'status@broadcast' : formatJid(to);
 
         let options = {};
-        if (jid === 'status@broadcast' && session.socket?.user?.id) {
-            const myJid = formatJid(session.socket.user.id.split(':')[0]);
-            const statusJids = [myJid, ...contacts.map(c => formatJid(c))];
-
+        if (jid === 'status@broadcast') {
             options = {
-                statusJidList: [...new Set(statusJids)],
                 broadcast: true,
                 backgroundColor: '#1E1E1E'
             };
@@ -277,12 +268,8 @@ export async function sendVideo(sessionId, to, videoUrl, caption = '', contacts 
         const jid = to === 'status@broadcast' ? 'status@broadcast' : formatJid(to);
 
         let options = {};
-        if (jid === 'status@broadcast' && session.socket?.user?.id) {
-            const myJid = formatJid(session.socket.user.id.split(':')[0]);
-            const statusJids = [myJid, ...contacts.map(c => formatJid(c))];
-
+        if (jid === 'status@broadcast') {
             options = {
-                statusJidList: [...new Set(statusJids)],
                 broadcast: true,
                 backgroundColor: '#1E1E1E'
             };
