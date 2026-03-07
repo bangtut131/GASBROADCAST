@@ -44,6 +44,20 @@ app.get('/api/sessions', auth, (req, res) => {
     res.json({ success: true, data: getAllSessions() });
 });
 
+// WAHA-compatible: POST /api/sessions { name, config }
+app.post('/api/sessions', auth, async (req, res) => {
+    try {
+        const { name, sessionId } = req.body;
+        const id = name || sessionId;
+        if (!id) return res.status(400).json({ error: 'name or sessionId required' });
+        // Just register — actual start done via /api/sessions/:name/start
+        res.json({ success: true, data: { id, status: 'starting' } });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Original static endpoint — must be registered BEFORE /:name/start
 app.post('/api/sessions/start', auth, async (req, res) => {
     try {
         const { sessionId } = req.body;
@@ -54,6 +68,18 @@ app.post('/api/sessions/start', auth, async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
+// WAHA-compatible: POST /api/sessions/:name/start (after static route above)
+app.post('/api/sessions/:name/start', auth, async (req, res) => {
+    try {
+        const sessionId = req.params.name;
+        const result = await createSession(sessionId);
+        res.json({ success: true, data: result });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 
 // ==================== Per-session ====================
 app.get('/api/:session/auth/qr', auth, (req, res) => {
