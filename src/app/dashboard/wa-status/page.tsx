@@ -40,8 +40,12 @@ export default function WAStatusPage() {
     const [error, setError] = useState('');
 
     // Forms
-    const [contentForm, setContentForm] = useState({ type: 'image' as 'image' | 'video' | 'text', title: '', content_url: '', caption: '', category_id: '', tags: '' });
+    const [contentForm, setContentForm] = useState({ type: 'image' as 'image' | 'video' | 'text', title: '', content_url: '', storage_path: '', caption: '', category_id: '', tags: '' });
     const [catForm, setCatForm] = useState({ name: '', color: '#6C63FF', icon: '📁' });
+    const [uploadProgress, setUploadProgress] = useState(0);
+    const [uploading, setUploading] = useState(false);
+    const [dragOver, setDragOver] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const [schedForm, setSchedForm] = useState({
         name: '', device_id: '', mode: 'random',
         category_ids: [] as string[],
@@ -94,15 +98,48 @@ export default function WAStatusPage() {
     const handleAddContent = async () => {
         setSaving(true); setError('');
         try {
-            const body = { ...contentForm, tags: contentForm.tags.split(',').map(t => t.trim()).filter(Boolean), category_id: contentForm.category_id || null };
+            const body = {
+                ...contentForm,
+                tags: contentForm.tags.split(',').map(t => t.trim()).filter(Boolean),
+                category_id: contentForm.category_id || null,
+            };
             const res = await fetch('/api/wa-status/contents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
             const data = await res.json();
             if (!data.success) throw new Error(data.error);
             await loadContents();
             setShowAddContent(false);
-            setContentForm({ type: 'image', title: '', content_url: '', caption: '', category_id: '', tags: '' });
+            setContentForm({ type: 'image', title: '', content_url: '', storage_path: '', caption: '', category_id: '', tags: '' });
         } catch (e: any) { setError(e.message); }
         finally { setSaving(false); }
+    };
+
+    const handleFileUpload = async (file: File) => {
+        if (!file) return;
+        setUploading(true); setUploadProgress(10); setError('');
+        try {
+            const form = new FormData();
+            form.append('file', file);
+            setUploadProgress(40);
+            const res = await fetch('/api/wa-status/upload', { method: 'POST', body: form });
+            setUploadProgress(80);
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error);
+            setContentForm(f => ({
+                ...f,
+                content_url: data.data.url,
+                storage_path: data.data.path,
+                type: data.data.type as 'image' | 'video',
+                title: f.title || file.name.replace(/\.[^.]+$/, ''),
+            }));
+            setUploadProgress(100);
+        } catch (e: any) { setError(e.message); }
+        finally { setUploading(false); setTimeout(() => setUploadProgress(0), 800); }
+    };
+
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault(); setDragOver(false);
+        const file = e.dataTransfer.files[0];
+        if (file) handleFileUpload(file);
     };
 
     const handleAddCategory = async () => {
@@ -412,9 +449,73 @@ export default function WAStatusPage() {
                             </div>
                             {contentForm.type !== 'text' && (
                                 <div className="form-group">
-                                    <label className="form-label">URL {contentForm.type === 'image' ? 'Gambar' : 'Video'} *</label>
-                                    <input className="form-input" placeholder={`https://example.com/file.${contentForm.type === 'image' ? 'jpg' : 'mp4'}`} value={contentForm.content_url} onChange={e => setContentForm(f => ({ ...f, content_url: e.target.value }))} />
-                                    <span className="form-hint">Link harus publik — bisa dari Supabase Storage, Google Drive, dsb</span>
+                                    <label className="form-label">Upload {contentForm.type === 'image' ? 'Gambar' : 'Video'} *</label>
+
+                                    {/* Drag-drop zone */}
+                                    <div
+                                        onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                                        onDragLeave={() => setDragOver(false)}
+                                        onDrop={handleDrop}
+                                        onClick={() => fileInputRef.current?.click()}
+                                        style={{
+                                            border: `2px dashed ${dragOver ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                                            borderRadius: 'var(--radius-md)',
+                                            padding: 'var(--space-5)',
+                                            textAlign: 'center',
+                                            cursor: 'pointer',
+                                            background: dragOver ? 'var(--color-accent-soft)' : 'var(--color-bg-tertiary)',
+                                            transition: 'all 0.2s',
+                                            marginBottom: 'var(--space-2)',
+                                        }}
+                                    >
+                                        {uploading ? (
+                                            <div>
+                                                <Loader2 size={24} className="animate-spin" style={{ color: 'var(--color-accent)', margin: '0 auto 8px' }} />
+                                                <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)' }}>Mengupload... {uploadProgress}%</p>
+                                                <div style={{ height: 4, background: 'var(--color-bg-secondary)', borderRadius: 2, marginTop: 8 }}>
+                                                    <div style={{ height: '100%', width: `${uploadProgress}%`, background: 'var(--color-accent)', borderRadius: 2, transition: 'width 0.3s' }} />
+                                                </div>
+                                            </div>
+                                        ) : contentForm.content_url && contentForm.storage_path ? (
+                                            <div>
+                                                {contentForm.type === 'image'
+                                                    ? <img src={contentForm.content_url} alt="preview" style={{ maxHeight: 100, borderRadius: 6, objectFit: 'contain', marginBottom: 8 }} />
+                                                    : <Video size={32} style={{ color: 'var(--color-accent)', marginBottom: 8 }} />
+                                                }
+                                                <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-success)' }}>✅ File terupload — klik untuk ganti</p>
+                                            </div>
+                                        ) : (
+                                            <div>
+                                                <Upload size={24} style={{ color: 'var(--color-text-muted)', margin: '0 auto 8px' }} />
+                                                <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)' }}>
+                                                    Drag & drop file ke sini atau <span style={{ color: 'var(--color-accent)', fontWeight: 600 }}>klik untuk browse</span>
+                                                </p>
+                                                <p style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 4 }}>
+                                                    {contentForm.type === 'image' ? 'JPG, PNG, WEBP, GIF' : 'MP4, MOV'} — maks 10MB
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <input
+                                        ref={fileInputRef}
+                                        type="file"
+                                        accept={contentForm.type === 'image' ? 'image/*' : 'video/mp4,video/quicktime'}
+                                        style={{ display: 'none' }}
+                                        onChange={e => { const f = e.target.files?.[0]; if (f) handleFileUpload(f); }}
+                                    />
+
+                                    {/* Or paste URL manually */}
+                                    <details style={{ marginTop: 'var(--space-2)' }}>
+                                        <summary style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', cursor: 'pointer' }}>Atau masukkan URL langsung (Google Drive, dll)</summary>
+                                        <input
+                                            className="form-input"
+                                            style={{ marginTop: 6 }}
+                                            placeholder={`https://drive.google.com/uc?export=download&id=...`}
+                                            value={contentForm.storage_path ? '' : contentForm.content_url}
+                                            onChange={e => setContentForm(f => ({ ...f, content_url: e.target.value, storage_path: '' }))}
+                                        />
+                                        <span className="form-hint">Format Google Drive: ganti /view ke /uc?export=download&id=FILE_ID</span>
+                                    </details>
                                 </div>
                             )}
                             <div className="form-group">
