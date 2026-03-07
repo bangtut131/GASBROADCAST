@@ -24,6 +24,7 @@ export default function DeviceConnectPage() {
     const [error, setError] = useState('');
     const [deviceId, setDeviceId] = useState('');
     const [qrCode, setQrCode] = useState('');
+    const [qrDebug, setQrDebug] = useState('');
     const [status, setStatus] = useState('qr_pending');
     const qrInterval = useRef<NodeJS.Timeout | null>(null);
     const router = useRouter();
@@ -48,7 +49,13 @@ export default function DeviceConnectPage() {
             const res = await fetch(`/api/devices/${deviceId}/qr`);
             const data = await res.json();
             if (data.data?.qr) setQrCode(data.data.qr);
-        } catch { /* ignore */ }
+            if (data.data?.debug) setQrDebug(data.data.debug);
+            if (data.data?.status === 'connected') {
+                if (qrInterval.current) clearInterval(qrInterval.current);
+                setStatus('connected');
+                setStep('done');
+            }
+        } catch (e: any) { setQrDebug(`fetch error: ${e.message}`); }
     };
 
     const checkStatus = async () => {
@@ -333,6 +340,11 @@ export default function DeviceConnectPage() {
                                             <p style={{ marginTop: 'var(--space-3)', color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>
                                                 {provider === 'wa-web' ? 'Memulai sesi WA Web...' : 'Mengambil QR Code...'}
                                             </p>
+                                            {qrDebug && (
+                                                <p style={{ marginTop: 8, fontSize: 10, color: 'var(--color-text-muted)', maxWidth: 180, wordBreak: 'break-all', opacity: 0.7 }}>
+                                                    🔍 {qrDebug}
+                                                </p>
+                                            )}
                                         </div>
                                     )}
                                 </div>
