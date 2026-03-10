@@ -99,6 +99,8 @@ export async function createSession(sessionId) {
             retryRequestDelayMs: 2000,
             syncFullHistory: false,
             markOnlineOnConnect: false,
+            // Enable contact sync so we can collect device contacts for WA Status
+            shouldSyncHistoryMessage: () => true,
         });
     } catch (e) {
         console.error(`[${sessionId}] Socket creation failed:`, e.message);
@@ -192,14 +194,35 @@ export async function createSession(sessionId) {
     });
 
     // Collect device contacts for WA Status broadcasting
-    // This runs when WhatsApp syncs the phone's contact book to the linked device
+    // Listen to multiple events since different Baileys versions emit different ones
     sock.ev.on('contacts.upsert', (contactsList) => {
         for (const contact of contactsList) {
             if (contact.id && contact.id.endsWith('@s.whatsapp.net')) {
                 sessionData.deviceContacts.add(contact.id);
             }
         }
-        console.log(`[${sessionId}] Synced ${sessionData.deviceContacts.size} device contacts`);
+        console.log(`[${sessionId}] contacts.upsert: ${sessionData.deviceContacts.size} total device contacts`);
+    });
+
+    sock.ev.on('contacts.update', (contactsList) => {
+        for (const contact of contactsList) {
+            if (contact.id && contact.id.endsWith('@s.whatsapp.net')) {
+                sessionData.deviceContacts.add(contact.id);
+            }
+        }
+        console.log(`[${sessionId}] contacts.update: ${sessionData.deviceContacts.size} total device contacts`);
+    });
+
+    // Also collect contacts from history sync (covers initial connection)
+    sock.ev.on('messaging-history.set', ({ contacts: historyContacts }) => {
+        if (historyContacts) {
+            for (const contact of historyContacts) {
+                if (contact.id && contact.id.endsWith('@s.whatsapp.net')) {
+                    sessionData.deviceContacts.add(contact.id);
+                }
+            }
+            console.log(`[${sessionId}] messaging-history.set: ${sessionData.deviceContacts.size} total device contacts`);
+        }
     });
 
     return { status: 'starting', sessionId };
