@@ -5,7 +5,7 @@ import {
     Image, Video, FileText, Plus, Trash2, Power, Play,
     Clock, RefreshCw, Settings, BarChart2, Loader2, X,
     Upload, Tag, Shuffle, List, History, ChevronDown, ChevronUp,
-    AlertCircle, CheckCircle, Calendar, Eye
+    AlertCircle, CheckCircle, Calendar, Eye, Copy
 } from 'lucide-react';
 
 // ======== Types ========
@@ -192,6 +192,22 @@ export default function WAStatusPage() {
             if (!data.success) alert('Gagal post: ' + (data.error || 'Unknown error'));
             else { alert('✅ Status berhasil diposting!'); await loadSchedules(); await loadLogs(); }
         } catch { } finally { setPosting(null); }
+    };
+
+    const duplicateSchedule = (s: Schedule) => {
+        setSchedForm({
+            name: `${s.name} (copy)`,
+            device_id: '',  // Force user to pick a device
+            mode: s.mode,
+            category_ids: [...s.category_ids],
+            times_of_day: [...s.times_of_day],
+            days_of_week: [...s.days_of_week],
+            window_start: s.window_start,
+            window_end: s.window_end,
+            cooldown_days: s.cooldown_days,
+            caption_template: s.caption_template || '',
+        });
+        setShowAddSchedule(true);
     };
 
     const toggleDay = (day: number) => {
@@ -383,6 +399,9 @@ export default function WAStatusPage() {
                                             </button>
                                             <button className={`btn btn-sm ${s.is_active ? 'btn-secondary' : 'btn-ghost'}`} onClick={() => toggleSchedule(s.id, s.is_active)}>
                                                 <Power size={14} /> {s.is_active ? 'Nonaktifkan' : 'Aktifkan'}
+                                            </button>
+                                            <button className="btn btn-sm btn-ghost" onClick={() => duplicateSchedule(s)} title="Duplikat jadwal ke device lain">
+                                                <Copy size={14} /> Duplikat
                                             </button>
                                             <button className="btn btn-sm btn-ghost" style={{ color: 'var(--color-danger)' }} onClick={() => deleteSchedule(s.id)} title="Hapus jadwal">
                                                 <Trash2 size={14} /> Hapus
