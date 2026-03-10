@@ -69,7 +69,7 @@ export default function Sidebar() {
         </div>
         {!collapsed && (
           <div className={s.logoTextWrap}>
-            <span className={s.logoText}>GasBroadcast</span>
+            <span className={s.logoText}>GAS Smart Broadcast</span>
             <span className={s.logoVersion}>v1.0</span>
           </div>
         )}

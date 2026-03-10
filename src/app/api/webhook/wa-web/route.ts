@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
 /**
- * Webhook handler for GasBroadcast Baileys Bridge (wa-web provider)
+ * Webhook handler for GAS Smart Broadcast Baileys Bridge (wa-web provider)
  * The bridge sends incoming messages to this endpoint.
  * We reuse the same event processing as the WAHA webhook.
  */

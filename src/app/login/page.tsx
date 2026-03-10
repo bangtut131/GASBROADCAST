@@ -7,161 +7,161 @@ import Link from 'next/link';
 import { MessageSquare, Eye, EyeOff, Loader2 } from 'lucide-react';
 
 export default function LoginPage() {
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [showPassword, setShowPassword] = useState(false);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState('');
-    const router = useRouter();
-    const supabase = createClient();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const router = useRouter();
+  const supabase = createClient();
 
-    const handleLogin = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setLoading(true);
-        setError('');
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
 
-        try {
-            const { error } = await supabase.auth.signInWithPassword({
-                email,
-                password,
-            });
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-            if (error) {
-                setError(error.message);
-                return;
-            }
+      if (error) {
+        setError(error.message);
+        return;
+      }
 
-            router.push('/dashboard');
-            router.refresh();
-        } catch {
-            setError('Terjadi kesalahan. Silakan coba lagi.');
-        } finally {
-            setLoading(false);
-        }
-    };
+      router.push('/dashboard');
+      router.refresh();
+    } catch {
+      setError('Terjadi kesalahan. Silakan coba lagi.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    return (
-        <div className="auth-page">
-            <div className="auth-container">
-                {/* Left side — Branding */}
-                <div className="auth-branding">
-                    <div className="auth-branding-content">
-                        <div className="auth-logo">
-                            <div className="auth-logo-icon">
-                                <MessageSquare size={28} />
-                            </div>
-                            <span className="auth-logo-text">WA Broadcast</span>
-                        </div>
-                        <h1 className="auth-branding-title">
-                            Platform WhatsApp Marketing
-                            <span className="text-accent"> Terlengkap</span>
-                        </h1>
-                        <p className="auth-branding-desc">
-                            Kirim pesan broadcast, auto-reply cerdas dengan AI, dan kelola ribuan
-                            kontak dalam satu dashboard yang powerful.
-                        </p>
-                        <div className="auth-features">
-                            <div className="auth-feature">
-                                <span className="auth-feature-icon">📡</span>
-                                <span>Broadcast ke ribuan kontak</span>
-                            </div>
-                            <div className="auth-feature">
-                                <span className="auth-feature-icon">🤖</span>
-                                <span>Auto-Reply dengan AI</span>
-                            </div>
-                            <div className="auth-feature">
-                                <span className="auth-feature-icon">📊</span>
-                                <span>Delivery Report real-time</span>
-                            </div>
-                            <div className="auth-feature">
-                                <span className="auth-feature-icon">🔌</span>
-                                <span>REST API untuk integrasi</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="auth-branding-glow" />
-                </div>
+  return (
+    <div className="auth-page">
+      <div className="auth-container">
+        {/* Left side — Branding */}
+        <div className="auth-branding">
+          <div className="auth-branding-content">
+            <div className="auth-logo">
+              <div className="auth-logo-icon">
+                <MessageSquare size={28} />
+              </div>
+              <span className="auth-logo-text">GAS Smart Broadcast</span>
+            </div>
+            <h1 className="auth-branding-title">
+              Platform WhatsApp Marketing
+              <span className="text-accent"> Terlengkap</span>
+            </h1>
+            <p className="auth-branding-desc">
+              Kirim pesan broadcast, auto-reply cerdas dengan AI, dan kelola ribuan
+              kontak dalam satu dashboard yang powerful.
+            </p>
+            <div className="auth-features">
+              <div className="auth-feature">
+                <span className="auth-feature-icon">📡</span>
+                <span>Broadcast ke ribuan kontak</span>
+              </div>
+              <div className="auth-feature">
+                <span className="auth-feature-icon">🤖</span>
+                <span>Auto-Reply dengan AI</span>
+              </div>
+              <div className="auth-feature">
+                <span className="auth-feature-icon">📊</span>
+                <span>Delivery Report real-time</span>
+              </div>
+              <div className="auth-feature">
+                <span className="auth-feature-icon">🔌</span>
+                <span>REST API untuk integrasi</span>
+              </div>
+            </div>
+          </div>
+          <div className="auth-branding-glow" />
+        </div>
 
-                {/* Right side — Form */}
-                <div className="auth-form-wrapper">
-                    <div className="auth-form-card card-glass">
-                        <div className="auth-form-header">
-                            <h2>Selamat Datang!</h2>
-                            <p className="text-muted">Masuk ke akun Anda untuk melanjutkan</p>
-                        </div>
-
-                        {error && (
-                            <div className="auth-error">
-                                {error}
-                            </div>
-                        )}
-
-                        <form onSubmit={handleLogin} className="auth-form">
-                            <div className="form-group">
-                                <label className="form-label" htmlFor="email">Email</label>
-                                <input
-                                    id="email"
-                                    type="email"
-                                    className="form-input"
-                                    placeholder="nama@email.com"
-                                    value={email}
-                                    onChange={(e) => setEmail(e.target.value)}
-                                    required
-                                />
-                            </div>
-
-                            <div className="form-group">
-                                <label className="form-label" htmlFor="password">Password</label>
-                                <div className="password-wrapper">
-                                    <input
-                                        id="password"
-                                        type={showPassword ? 'text' : 'password'}
-                                        className="form-input"
-                                        placeholder="Masukkan password"
-                                        value={password}
-                                        onChange={(e) => setPassword(e.target.value)}
-                                        required
-                                    />
-                                    <button
-                                        type="button"
-                                        className="password-toggle"
-                                        onClick={() => setShowPassword(!showPassword)}
-                                        tabIndex={-1}
-                                    >
-                                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                                    </button>
-                                </div>
-                            </div>
-
-                            <button
-                                type="submit"
-                                className="btn btn-primary btn-lg auth-submit"
-                                disabled={loading}
-                            >
-                                {loading ? (
-                                    <>
-                                        <Loader2 size={18} className="animate-spin" />
-                                        Memproses...
-                                    </>
-                                ) : (
-                                    'Masuk'
-                                )}
-                            </button>
-                        </form>
-
-                        <div className="auth-form-footer">
-                            <p className="text-muted">
-                                Belum punya akun?{' '}
-                                <Link href="/register" className="auth-link">
-                                    Daftar sekarang
-                                </Link>
-                            </p>
-                        </div>
-                    </div>
-                </div>
+        {/* Right side — Form */}
+        <div className="auth-form-wrapper">
+          <div className="auth-form-card card-glass">
+            <div className="auth-form-header">
+              <h2>Selamat Datang!</h2>
+              <p className="text-muted">Masuk ke akun Anda untuk melanjutkan</p>
             </div>
 
-            <style jsx>{`
+            {error && (
+              <div className="auth-error">
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleLogin} className="auth-form">
+              <div className="form-group">
+                <label className="form-label" htmlFor="email">Email</label>
+                <input
+                  id="email"
+                  type="email"
+                  className="form-input"
+                  placeholder="nama@email.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="password">Password</label>
+                <div className="password-wrapper">
+                  <input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    className="form-input"
+                    placeholder="Masukkan password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="password-toggle"
+                    onClick={() => setShowPassword(!showPassword)}
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="btn btn-primary btn-lg auth-submit"
+                disabled={loading}
+              >
+                {loading ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    Memproses...
+                  </>
+                ) : (
+                  'Masuk'
+                )}
+              </button>
+            </form>
+
+            <div className="auth-form-footer">
+              <p className="text-muted">
+                Belum punya akun?{' '}
+                <Link href="/register" className="auth-link">
+                  Daftar sekarang
+                </Link>
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <style jsx>{`
         .auth-page {
           min-height: 100vh;
           display: flex;
@@ -324,6 +324,6 @@ export default function LoginPage() {
           text-decoration: underline;
         }
       `}</style>
-        </div>
-    );
+    </div>
+  );
 }

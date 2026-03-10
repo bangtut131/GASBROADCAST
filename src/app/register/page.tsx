@@ -7,65 +7,65 @@ import Link from 'next/link';
 import { MessageSquare, Eye, EyeOff, Loader2 } from 'lucide-react';
 
 export default function RegisterPage() {
-    const [fullName, setFullName] = useState('');
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [showPassword, setShowPassword] = useState(false);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState('');
-    const [success, setSuccess] = useState(false);
-    const router = useRouter();
-    const supabase = createClient();
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
+  const router = useRouter();
+  const supabase = createClient();
 
-    const handleRegister = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setLoading(true);
-        setError('');
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
 
-        if (password.length < 6) {
-            setError('Password minimal 6 karakter');
-            setLoading(false);
-            return;
-        }
+    if (password.length < 6) {
+      setError('Password minimal 6 karakter');
+      setLoading(false);
+      return;
+    }
 
-        try {
-            const { error } = await supabase.auth.signUp({
-                email,
-                password,
-                options: {
-                    data: {
-                        full_name: fullName,
-                    },
-                },
-            });
+    try {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: fullName,
+          },
+        },
+      });
 
-            if (error) {
-                setError(error.message);
-                return;
-            }
+      if (error) {
+        setError(error.message);
+        return;
+      }
 
-            setSuccess(true);
-        } catch {
-            setError('Terjadi kesalahan. Silakan coba lagi.');
-        } finally {
-            setLoading(false);
-        }
-    };
+      setSuccess(true);
+    } catch {
+      setError('Terjadi kesalahan. Silakan coba lagi.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    if (success) {
-        return (
-            <div className="auth-page">
-                <div className="auth-success-card card-glass">
-                    <div className="auth-success-icon">✅</div>
-                    <h2>Registrasi Berhasil!</h2>
-                    <p className="text-muted">
-                        Silakan cek email Anda untuk verifikasi akun, lalu login untuk memulai.
-                    </p>
-                    <Link href="/login" className="btn btn-primary btn-lg" style={{ width: '100%', marginTop: 'var(--space-4)' }}>
-                        Ke Halaman Login
-                    </Link>
-                </div>
-                <style jsx>{`
+  if (success) {
+    return (
+      <div className="auth-page">
+        <div className="auth-success-card card-glass">
+          <div className="auth-success-icon">✅</div>
+          <h2>Registrasi Berhasil!</h2>
+          <p className="text-muted">
+            Silakan cek email Anda untuk verifikasi akun, lalu login untuk memulai.
+          </p>
+          <Link href="/login" className="btn btn-primary btn-lg" style={{ width: '100%', marginTop: 'var(--space-4)' }}>
+            Ke Halaman Login
+          </Link>
+        </div>
+        <style jsx>{`
           .auth-page {
             min-height: 100vh;
             display: flex;
@@ -89,147 +89,147 @@ export default function RegisterPage() {
             margin-bottom: var(--space-3);
           }
         `}</style>
+      </div>
+    );
+  }
+
+  return (
+    <div className="auth-page">
+      <div className="auth-container">
+        {/* Left side — Branding */}
+        <div className="auth-branding">
+          <div className="auth-branding-content">
+            <div className="auth-logo">
+              <div className="auth-logo-icon">
+                <MessageSquare size={28} />
+              </div>
+              <span className="auth-logo-text">GAS Smart Broadcast</span>
             </div>
-        );
-    }
+            <h1 className="auth-branding-title">
+              Mulai Kirim Broadcast
+              <span className="text-accent"> Sekarang</span>
+            </h1>
+            <p className="auth-branding-desc">
+              Daftar gratis dan mulai kirim pesan WhatsApp broadcast ke ribuan
+              kontak dalam hitungan menit.
+            </p>
+            <div className="auth-features">
+              <div className="auth-feature">
+                <span className="auth-feature-icon">✨</span>
+                <span>Gratis untuk memulai</span>
+              </div>
+              <div className="auth-feature">
+                <span className="auth-feature-icon">⚡</span>
+                <span>Setup dalam 5 menit</span>
+              </div>
+              <div className="auth-feature">
+                <span className="auth-feature-icon">🔒</span>
+                <span>Data aman & terenkripsi</span>
+              </div>
+              <div className="auth-feature">
+                <span className="auth-feature-icon">💬</span>
+                <span>Support 24/7</span>
+              </div>
+            </div>
+          </div>
+          <div className="auth-branding-glow" />
+        </div>
 
-    return (
-        <div className="auth-page">
-            <div className="auth-container">
-                {/* Left side — Branding */}
-                <div className="auth-branding">
-                    <div className="auth-branding-content">
-                        <div className="auth-logo">
-                            <div className="auth-logo-icon">
-                                <MessageSquare size={28} />
-                            </div>
-                            <span className="auth-logo-text">WA Broadcast</span>
-                        </div>
-                        <h1 className="auth-branding-title">
-                            Mulai Kirim Broadcast
-                            <span className="text-accent"> Sekarang</span>
-                        </h1>
-                        <p className="auth-branding-desc">
-                            Daftar gratis dan mulai kirim pesan WhatsApp broadcast ke ribuan
-                            kontak dalam hitungan menit.
-                        </p>
-                        <div className="auth-features">
-                            <div className="auth-feature">
-                                <span className="auth-feature-icon">✨</span>
-                                <span>Gratis untuk memulai</span>
-                            </div>
-                            <div className="auth-feature">
-                                <span className="auth-feature-icon">⚡</span>
-                                <span>Setup dalam 5 menit</span>
-                            </div>
-                            <div className="auth-feature">
-                                <span className="auth-feature-icon">🔒</span>
-                                <span>Data aman & terenkripsi</span>
-                            </div>
-                            <div className="auth-feature">
-                                <span className="auth-feature-icon">💬</span>
-                                <span>Support 24/7</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="auth-branding-glow" />
-                </div>
-
-                {/* Right side — Form */}
-                <div className="auth-form-wrapper">
-                    <div className="auth-form-card card-glass">
-                        <div className="auth-form-header">
-                            <h2>Buat Akun Baru</h2>
-                            <p className="text-muted">Isi data di bawah untuk mendaftar</p>
-                        </div>
-
-                        {error && (
-                            <div className="auth-error">
-                                {error}
-                            </div>
-                        )}
-
-                        <form onSubmit={handleRegister} className="auth-form">
-                            <div className="form-group">
-                                <label className="form-label" htmlFor="fullName">Nama Lengkap</label>
-                                <input
-                                    id="fullName"
-                                    type="text"
-                                    className="form-input"
-                                    placeholder="Nama lengkap Anda"
-                                    value={fullName}
-                                    onChange={(e) => setFullName(e.target.value)}
-                                    required
-                                />
-                            </div>
-
-                            <div className="form-group">
-                                <label className="form-label" htmlFor="email">Email</label>
-                                <input
-                                    id="email"
-                                    type="email"
-                                    className="form-input"
-                                    placeholder="nama@email.com"
-                                    value={email}
-                                    onChange={(e) => setEmail(e.target.value)}
-                                    required
-                                />
-                            </div>
-
-                            <div className="form-group">
-                                <label className="form-label" htmlFor="password">Password</label>
-                                <div className="password-wrapper">
-                                    <input
-                                        id="password"
-                                        type={showPassword ? 'text' : 'password'}
-                                        className="form-input"
-                                        placeholder="Minimal 6 karakter"
-                                        value={password}
-                                        onChange={(e) => setPassword(e.target.value)}
-                                        required
-                                        minLength={6}
-                                    />
-                                    <button
-                                        type="button"
-                                        className="password-toggle"
-                                        onClick={() => setShowPassword(!showPassword)}
-                                        tabIndex={-1}
-                                    >
-                                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                                    </button>
-                                </div>
-                                <span className="form-hint">Minimal 6 karakter</span>
-                            </div>
-
-                            <button
-                                type="submit"
-                                className="btn btn-primary btn-lg auth-submit"
-                                disabled={loading}
-                            >
-                                {loading ? (
-                                    <>
-                                        <Loader2 size={18} className="animate-spin" />
-                                        Memproses...
-                                    </>
-                                ) : (
-                                    'Daftar Sekarang'
-                                )}
-                            </button>
-                        </form>
-
-                        <div className="auth-form-footer">
-                            <p className="text-muted">
-                                Sudah punya akun?{' '}
-                                <Link href="/login" className="auth-link">
-                                    Masuk di sini
-                                </Link>
-                            </p>
-                        </div>
-                    </div>
-                </div>
+        {/* Right side — Form */}
+        <div className="auth-form-wrapper">
+          <div className="auth-form-card card-glass">
+            <div className="auth-form-header">
+              <h2>Buat Akun Baru</h2>
+              <p className="text-muted">Isi data di bawah untuk mendaftar</p>
             </div>
 
-            <style jsx>{`
+            {error && (
+              <div className="auth-error">
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleRegister} className="auth-form">
+              <div className="form-group">
+                <label className="form-label" htmlFor="fullName">Nama Lengkap</label>
+                <input
+                  id="fullName"
+                  type="text"
+                  className="form-input"
+                  placeholder="Nama lengkap Anda"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="email">Email</label>
+                <input
+                  id="email"
+                  type="email"
+                  className="form-input"
+                  placeholder="nama@email.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="password">Password</label>
+                <div className="password-wrapper">
+                  <input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    className="form-input"
+                    placeholder="Minimal 6 karakter"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    minLength={6}
+                  />
+                  <button
+                    type="button"
+                    className="password-toggle"
+                    onClick={() => setShowPassword(!showPassword)}
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+                <span className="form-hint">Minimal 6 karakter</span>
+              </div>
+
+              <button
+                type="submit"
+                className="btn btn-primary btn-lg auth-submit"
+                disabled={loading}
+              >
+                {loading ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    Memproses...
+                  </>
+                ) : (
+                  'Daftar Sekarang'
+                )}
+              </button>
+            </form>
+
+            <div className="auth-form-footer">
+              <p className="text-muted">
+                Sudah punya akun?{' '}
+                <Link href="/login" className="auth-link">
+                  Masuk di sini
+                </Link>
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <style jsx>{`
         .auth-page {
           min-height: 100vh;
           display: flex;
@@ -388,6 +388,6 @@ export default function RegisterPage() {
           text-decoration: underline;
         }
       `}</style>
-        </div>
-    );
+    </div>
+  );
 }

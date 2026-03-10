@@ -11,7 +11,7 @@ export default function LandingPage() {
             <div className="landing-logo-icon">
               <MessageSquare size={22} />
             </div>
-            <span className="landing-logo-text">WA Broadcast</span>
+            <span className="landing-logo-text">GAS Smart Broadcast</span>
           </div>
           <div className="landing-nav-actions">
             <Link href="/login" className="btn btn-ghost">Masuk</Link>
@@ -69,7 +69,7 @@ export default function LandingPage() {
           </div>
           <div className="features-grid">
             {[
-              { icon: <Send size={24} />, title: 'WA Broadcast', desc: 'Kirim pesan ke ribuan kontak sekaligus dengan personalisasi nama & variabel.' },
+              { icon: <Send size={24} />, title: 'GAS Smart Broadcast', desc: 'Kirim pesan ke ribuan kontak sekaligus dengan personalisasi nama & variabel.' },
               { icon: <Bot size={24} />, title: 'Smart Auto Reply', desc: 'Balas pesan otomatis dengan keyword atau AI. Lebih cerdas & natural.' },
               { icon: <Users size={24} />, title: 'Contact Management', desc: 'Import CSV, validasi nomor, hapus duplikat, dan kelola grup kontak.' },
               { icon: <Smartphone size={24} />, title: 'Multi Device', desc: 'Hubungkan beberapa nomor WhatsApp sekaligus dalam satu dashboard.' },
@@ -173,10 +173,10 @@ export default function LandingPage() {
             <div className="landing-logo-icon" style={{ width: 32, height: 32 }}>
               <MessageSquare size={16} />
             </div>
-            <span className="landing-logo-text">WA Broadcast</span>
+            <span className="landing-logo-text">GAS Smart Broadcast</span>
           </div>
           <p className="landing-footer-copy">
-            © 2026 WA Broadcast. All rights reserved.
+            © 2026 GAS Smart Broadcast. All rights reserved.
           </p>
         </div>
       </footer>

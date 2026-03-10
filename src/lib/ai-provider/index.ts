@@ -102,7 +102,7 @@ export class AIProvider {
         // OpenRouter specific headers
         if (cfg.baseUrl.includes('openrouter')) {
             headers['HTTP-Referer'] = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001';
-            headers['X-Title'] = process.env.NEXT_PUBLIC_APP_NAME || 'WA Broadcast';
+            headers['X-Title'] = process.env.NEXT_PUBLIC_APP_NAME || 'GAS Smart Broadcast';
         }
 
         const response = await fetch(`${cfg.baseUrl}/chat/completions`, {

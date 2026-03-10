@@ -240,7 +240,7 @@ export default function DeviceConnectPage() {
                                         <input
                                             type="password"
                                             className="form-input"
-                                            placeholder="gasbroadcast_bridge_2026"
+                                            placeholder="gas_smart_broadcast_bridge"
                                             value={bridgeApiSecret}
                                             onChange={e => setBridgeApiSecret(e.target.value)}
                                         />
