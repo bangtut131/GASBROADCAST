@@ -81,6 +81,7 @@ export async function createSession(sessionId) {
         qrBase64: null,
         phoneNumber: null,
         socket: null,
+        deviceContacts: new Set(), // Auto-collected from device's phone book
     };
     sessions.set(sessionId, sessionData);
 
@@ -190,6 +191,17 @@ export async function createSession(sessionId) {
         }
     });
 
+    // Collect device contacts for WA Status broadcasting
+    // This runs when WhatsApp syncs the phone's contact book to the linked device
+    sock.ev.on('contacts.upsert', (contactsList) => {
+        for (const contact of contactsList) {
+            if (contact.id && contact.id.endsWith('@s.whatsapp.net')) {
+                sessionData.deviceContacts.add(contact.id);
+            }
+        }
+        console.log(`[${sessionId}] Synced ${sessionData.deviceContacts.size} device contacts`);
+    });
+
     return { status: 'starting', sessionId };
 }
 
@@ -257,10 +269,15 @@ export async function sendStatusText(sessionId, text, backgroundColor = '#1D4ED8
     const session = sessions.get(sessionId);
     if (!session || session.status !== 'connected') return { success: false, error: 'Not connected' };
     try {
+        // Build statusJidList: sender JID + all device contacts + any extra contacts
+        const statusJids = buildStatusJidList(session, contacts);
+
         await session.socket.sendMessage('status@broadcast', {
             text,
             backgroundColor,
             font: font || 1,
+        }, {
+            statusJidList: statusJids,
         });
 
         return { success: true };
@@ -271,9 +288,13 @@ export async function sendStatusImage(sessionId, imageUrl, caption = '', contact
     const session = sessions.get(sessionId);
     if (!session || session.status !== 'connected') return { success: false, error: 'Not connected' };
     try {
+        const statusJids = buildStatusJidList(session, contacts);
+
         await session.socket.sendMessage('status@broadcast', {
             image: { url: imageUrl },
             caption: caption || undefined,
+        }, {
+            statusJidList: statusJids,
         });
 
         return { success: true };
@@ -284,13 +305,36 @@ export async function sendStatusVideo(sessionId, videoUrl, caption = '', contact
     const session = sessions.get(sessionId);
     if (!session || session.status !== 'connected') return { success: false, error: 'Not connected' };
     try {
+        const statusJids = buildStatusJidList(session, contacts);
+
         await session.socket.sendMessage('status@broadcast', {
             video: { url: videoUrl },
             caption: caption || undefined,
+        }, {
+            statusJidList: statusJids,
         });
 
         return { success: true };
     } catch (err) { return { success: false, error: err.message }; }
+}
+
+// Build the statusJidList from: sender's own JID + device contacts + extra contacts
+function buildStatusJidList(session, extraContacts = []) {
+    const myJid = formatJid(session.socket.user.id.split(':')[0]);
+    const jids = new Set([myJid]);
+
+    // Add all device contacts (auto-collected from phone book)
+    for (const jid of session.deviceContacts || []) {
+        jids.add(jid);
+    }
+
+    // Add any extra contacts passed from the app
+    for (const c of extraContacts) {
+        jids.add(formatJid(c));
+    }
+
+    console.log(`[${session.sessionId}] Status JID list: ${jids.size} contacts`);
+    return [...jids];
 }
 
 // Helper: Convert hex color string to ARGB uint32
