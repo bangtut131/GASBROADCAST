@@ -26,6 +26,11 @@ export interface WAProvider {
     sendDocument(sessionId: string, to: string, docUrl: string, filename: string): Promise<SendResult>;
     sendVideo(sessionId: string, to: string, videoUrl: string, caption?: string, contacts?: string[]): Promise<SendResult>;
 
+    // WA Status / Stories (dedicated endpoints — do NOT use regular messaging for status)
+    sendStatusText(sessionId: string, text: string, backgroundColor?: string, font?: number, contacts?: string[]): Promise<SendResult>;
+    sendStatusImage(sessionId: string, imageUrl: string, caption?: string, contacts?: string[]): Promise<SendResult>;
+    sendStatusVideo(sessionId: string, videoUrl: string, caption?: string, contacts?: string[]): Promise<SendResult>;
+
     // Webhooks
     handleWebhook(payload: unknown): ParsedEvent | null;
 }

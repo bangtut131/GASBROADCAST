@@ -144,6 +144,17 @@ export class OfficialProvider implements WAProvider {
         }
     }
 
+    // WA Status / Stories — Meta Cloud API does NOT support status posting
+    async sendStatusText(): Promise<SendResult> {
+        return { success: false, error: 'Meta Cloud API does not support WA Status posting. Use WAHA or Baileys bridge provider.' };
+    }
+    async sendStatusImage(): Promise<SendResult> {
+        return { success: false, error: 'Meta Cloud API does not support WA Status posting. Use WAHA or Baileys bridge provider.' };
+    }
+    async sendStatusVideo(): Promise<SendResult> {
+        return { success: false, error: 'Meta Cloud API does not support WA Status posting. Use WAHA or Baileys bridge provider.' };
+    }
+
     handleWebhook(payload: any): ParsedEvent | null {
         // Meta Cloud API webhook format
         const entry = payload?.entry?.[0];

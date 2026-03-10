@@ -280,6 +280,87 @@ export async function sendVideo(sessionId, to, videoUrl, caption = '', contacts 
     } catch (err) { return { success: false, error: err.message }; }
 }
 
+// ==================== WA Status (Story) ====================
+// Dedicated status functions — these use the WAHA-compatible approach
+// which correctly posts to the Status/Story tab rather than sending DMs
+
+export async function sendStatusText(sessionId, text, backgroundColor = '#1D4ED8', font = 1, contacts = []) {
+    const session = sessions.get(sessionId);
+    if (!session || session.status !== 'connected') return { success: false, error: 'Not connected' };
+    try {
+        // Build the statusJidList: at minimum must contain the sender's own JID
+        const myJid = formatJid(session.socket.user.id.split(':')[0]);
+        const statusJids = [myJid];
+        if (contacts.length > 0) {
+            statusJids.push(...contacts.map(c => formatJid(c)));
+        }
+
+        // Convert hex color to ARGB uint32 for WhatsApp protocol
+        const bgArgb = hexToArgb(backgroundColor);
+
+        await session.socket.sendMessage('status@broadcast', {
+            text,
+            backgroundColor,
+            font: font || 1,
+        }, {
+            statusJidList: [...new Set(statusJids)],
+        });
+
+        return { success: true };
+    } catch (err) { return { success: false, error: err.message }; }
+}
+
+export async function sendStatusImage(sessionId, imageUrl, caption = '', contacts = []) {
+    const session = sessions.get(sessionId);
+    if (!session || session.status !== 'connected') return { success: false, error: 'Not connected' };
+    try {
+        const myJid = formatJid(session.socket.user.id.split(':')[0]);
+        const statusJids = [myJid];
+        if (contacts.length > 0) {
+            statusJids.push(...contacts.map(c => formatJid(c)));
+        }
+
+        await session.socket.sendMessage('status@broadcast', {
+            image: { url: imageUrl },
+            caption: caption || undefined,
+        }, {
+            statusJidList: [...new Set(statusJids)],
+        });
+
+        return { success: true };
+    } catch (err) { return { success: false, error: err.message }; }
+}
+
+export async function sendStatusVideo(sessionId, videoUrl, caption = '', contacts = []) {
+    const session = sessions.get(sessionId);
+    if (!session || session.status !== 'connected') return { success: false, error: 'Not connected' };
+    try {
+        const myJid = formatJid(session.socket.user.id.split(':')[0]);
+        const statusJids = [myJid];
+        if (contacts.length > 0) {
+            statusJids.push(...contacts.map(c => formatJid(c)));
+        }
+
+        await session.socket.sendMessage('status@broadcast', {
+            video: { url: videoUrl },
+            caption: caption || undefined,
+        }, {
+            statusJidList: [...new Set(statusJids)],
+        });
+
+        return { success: true };
+    } catch (err) { return { success: false, error: err.message }; }
+}
+
+// Helper: Convert hex color string to ARGB uint32
+function hexToArgb(hex) {
+    const clean = hex.replace('#', '');
+    const r = parseInt(clean.substring(0, 2), 16) || 0;
+    const g = parseInt(clean.substring(2, 4), 16) || 0;
+    const b = parseInt(clean.substring(4, 6), 16) || 0;
+    return (0xFF000000 | (r << 16) | (g << 8) | b) >>> 0;
+}
+
 // ==================== Session Info ====================
 
 export function getSession(sessionId) {

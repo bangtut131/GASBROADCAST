@@ -160,6 +160,49 @@ export class WAHAProvider implements WAProvider {
         }
     }
 
+    // ==================== WA Status / Stories ====================
+    // These use dedicated WAHA status endpoints instead of regular messaging
+
+    async sendStatusText(sessionId: string, text: string, backgroundColor?: string, font?: number, contacts?: string[]): Promise<SendResult> {
+        try {
+            const data = await this.request('POST', `/api/${sessionId}/status/text`, {
+                text,
+                backgroundColor: backgroundColor || '#1D4ED8',
+                font: font || 1,
+                contacts: contacts?.map(c => c.includes('@') ? c : `${c}@c.us`),
+            });
+            return { success: true, messageId: data?.id };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    async sendStatusImage(sessionId: string, imageUrl: string, caption?: string, contacts?: string[]): Promise<SendResult> {
+        try {
+            const data = await this.request('POST', `/api/${sessionId}/status/image`, {
+                file: { url: imageUrl },
+                caption,
+                contacts: contacts?.map(c => c.includes('@') ? c : `${c}@c.us`),
+            });
+            return { success: true, messageId: data?.id };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    async sendStatusVideo(sessionId: string, videoUrl: string, caption?: string, contacts?: string[]): Promise<SendResult> {
+        try {
+            const data = await this.request('POST', `/api/${sessionId}/status/video`, {
+                file: { url: videoUrl },
+                caption,
+                contacts: contacts?.map(c => c.includes('@') ? c : `${c}@c.us`),
+            });
+            return { success: true, messageId: data?.id };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
+    }
+
     handleWebhook(payload: any): ParsedEvent | null {
         if (!payload?.event) return null;
 

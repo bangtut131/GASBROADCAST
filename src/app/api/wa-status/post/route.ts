@@ -58,11 +58,12 @@ export async function POST(request: NextRequest) {
         // Build caption with variables
         const caption = buildCaption(content.caption || schedule.caption_template || '', content);
 
-        // Post to WA Status via provider
+        // Post to WA Status via provider using DEDICATED status endpoints
+        // IMPORTANT: Do NOT use sendText/sendImage/sendVideo with status@broadcast —
+        // that approach silently fails or creates mass DMs instead of Status updates
         const provider = getProvider(device.provider, device.provider_config as Record<string, string>);
 
         // Fetch tenant contacts to distribute the status to
-        // WA Status requires a list of JIDs (contacts) to receive the broadcast properly, especially on Business accounts
         const { data: contacts } = await supabase
             .from('contacts')
             .select('phone')
@@ -74,12 +75,12 @@ export async function POST(request: NextRequest) {
         let result;
 
         if (content.type === 'image') {
-            result = await provider.sendImage(device.session_id, STATUS_CHAT_ID, content.content_url, caption, contactPhones);
+            result = await provider.sendStatusImage(device.session_id, content.content_url, caption, contactPhones);
         } else if (content.type === 'video') {
-            result = await provider.sendVideo(device.session_id, STATUS_CHAT_ID, content.content_url, caption, contactPhones);
+            result = await provider.sendStatusVideo(device.session_id, content.content_url, caption, contactPhones);
         } else {
             // Text status
-            result = await provider.sendText(device.session_id, STATUS_CHAT_ID, caption || content.caption || '', contactPhones);
+            result = await provider.sendStatusText(device.session_id, caption || content.caption || '', '#1D4ED8', 1, contactPhones);
         }
 
         // Log the result

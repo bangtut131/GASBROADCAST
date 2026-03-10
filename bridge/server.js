@@ -11,6 +11,7 @@ import cors from 'cors';
 import {
     createSession, deleteSession,
     sendText, sendImage, sendVideo,
+    sendStatusText, sendStatusImage, sendStatusVideo,
     getSession, getAllSessions, getQR,
     restorePersistedSessions,
 } from './session-manager.js';
@@ -132,28 +133,57 @@ app.post('/api/:session/logout', auth, async (req, res) => {
 // Required for wa-status posting and regular messaging
 
 app.post('/api/sendText', auth, async (req, res) => {
-    const { session, chatId, text, body: bodyText } = req.body;
+    const { session, chatId, text, body: bodyText, contacts } = req.body;
     const msg = text || bodyText;
     if (!session || !chatId || !msg) return res.status(400).json({ error: 'session, chatId and text required' });
-    const result = await sendText(session, chatId, msg);
+    const result = await sendText(session, chatId, msg, contacts || []);
     result.success ? res.json({ success: true }) : res.status(500).json({ error: result.error });
 });
 
 app.post('/api/sendImage', auth, async (req, res) => {
-    const { session, chatId, to, file, imageUrl, caption } = req.body;
+    const { session, chatId, to, file, imageUrl, caption, contacts } = req.body;
     const mediaUrl = file?.url || imageUrl;
     const recipient = chatId || to;
     if (!session || !recipient || !mediaUrl) return res.status(400).json({ error: 'session, chatId and file.url required' });
-    const result = await sendImage(session, recipient, mediaUrl, caption || '');
+    const result = await sendImage(session, recipient, mediaUrl, caption || '', contacts || []);
     result.success ? res.json({ success: true }) : res.status(500).json({ error: result.error });
 });
 
 app.post('/api/sendVideo', auth, async (req, res) => {
-    const { session, chatId, to, file, videoUrl, caption } = req.body;
+    const { session, chatId, to, file, videoUrl, caption, contacts } = req.body;
     const mediaUrl = file?.url || videoUrl;
     const recipient = chatId || to;
     if (!session || !recipient || !mediaUrl) return res.status(400).json({ error: 'session, chatId and file.url required' });
-    const result = await sendVideo(session, recipient, mediaUrl, caption || '');
+    const result = await sendVideo(session, recipient, mediaUrl, caption || '', contacts || []);
+    result.success ? res.json({ success: true }) : res.status(500).json({ error: result.error });
+});
+
+// ==================== WAHA-compatible Status (Story) endpoints ====================
+// These match the WAHA API format for posting WhatsApp Status/Stories
+// POST /api/{session}/status/text
+// POST /api/{session}/status/image
+// POST /api/{session}/status/video
+
+app.post('/api/:session/status/text', auth, async (req, res) => {
+    const { text, backgroundColor, font, contacts } = req.body;
+    if (!text) return res.status(400).json({ error: 'text required' });
+    const result = await sendStatusText(req.params.session, text, backgroundColor || '#1D4ED8', font || 1, contacts || []);
+    result.success ? res.json({ success: true }) : res.status(500).json({ error: result.error });
+});
+
+app.post('/api/:session/status/image', auth, async (req, res) => {
+    const { file, caption, contacts } = req.body;
+    const mediaUrl = file?.url;
+    if (!mediaUrl) return res.status(400).json({ error: 'file.url required' });
+    const result = await sendStatusImage(req.params.session, mediaUrl, caption || '', contacts || []);
+    result.success ? res.json({ success: true }) : res.status(500).json({ error: result.error });
+});
+
+app.post('/api/:session/status/video', auth, async (req, res) => {
+    const { file, caption, contacts } = req.body;
+    const mediaUrl = file?.url;
+    if (!mediaUrl) return res.status(400).json({ error: 'file.url required' });
+    const result = await sendStatusVideo(req.params.session, mediaUrl, caption || '', contacts || []);
     result.success ? res.json({ success: true }) : res.status(500).json({ error: result.error });
 });
 
