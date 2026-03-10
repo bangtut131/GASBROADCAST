@@ -23,6 +23,9 @@ const API_SECRET = process.env.API_SECRET || 'bridge-secret';
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
+// ==================== Health Check (no auth) ====================
+app.get('/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
+
 // ==================== Auth ====================
 function auth(req, res, next) {
     const key = req.headers['x-api-key'] || req.query.api_key;
