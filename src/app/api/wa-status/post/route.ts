@@ -161,10 +161,10 @@ export async function GET(request: NextRequest) {
         const due = (schedules || []).filter(s => {
             // Check if current day (Jakarta) is in schedule
             if (!s.days_of_week.includes(currentDay)) return false;
-            // Check if current time matches one of the posting times (within ±1 min)
+            // Check if current time matches one of the posting times (exact minute match)
             return s.times_of_day.some((t: string) => {
                 const [h, m] = t.split(':').map(Number);
-                return Math.abs((h * 60 + m) - curMinutes) <= 1;
+                return (h * 60 + m) === curMinutes;
             });
         });
 

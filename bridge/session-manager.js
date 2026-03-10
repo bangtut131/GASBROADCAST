@@ -214,29 +214,10 @@ export async function sendText(sessionId, to, text, contacts = []) {
     if (!session || session.status !== 'connected') return { success: false, error: 'Not connected' };
     try {
         const jid = to === 'status@broadcast' ? 'status@broadcast' : formatJid(to);
-
-        if (jid === 'status@broadcast' && session.socket?.user?.id) {
-            const messageObj = await generateWAMessageFromContent(
-                'status@broadcast',
-                {
-                    extendedTextMessage: {
-                        text,
-                        backgroundArgb: 4280194884, // Standard dark green
-                        font: 1
-                    }
-                },
-                { userJid: session.socket.user.id }
-            );
-
-            await session.socket.relayMessage('status@broadcast', messageObj.message, {
-                messageId: messageObj.key.id,
-                broadcast: true,
-                additionalAttributes: {}
-            });
-            return { success: true };
+        // For status@broadcast, use the dedicated sendStatusText function instead
+        if (jid === 'status@broadcast') {
+            return await sendStatusText(sessionId, text, '#1D4ED8', 1, contacts);
         }
-
-        // Normal chat
         await session.socket.sendMessage(jid, { text });
         return { success: true };
     } catch (err) { return { success: false, error: err.message }; }
@@ -247,16 +228,10 @@ export async function sendImage(sessionId, to, imageUrl, caption = '', contacts 
     if (!session || session.status !== 'connected') return { success: false, error: 'Not connected' };
     try {
         const jid = to === 'status@broadcast' ? 'status@broadcast' : formatJid(to);
-
-        let options = {};
         if (jid === 'status@broadcast') {
-            options = {
-                broadcast: true,
-                backgroundColor: '#1E1E1E'
-            };
+            return await sendStatusImage(sessionId, imageUrl, caption, contacts);
         }
-
-        await session.socket.sendMessage(jid, { image: { url: imageUrl }, caption }, options);
+        await session.socket.sendMessage(jid, { image: { url: imageUrl }, caption });
         return { success: true };
     } catch (err) { return { success: false, error: err.message }; }
 }
@@ -266,16 +241,10 @@ export async function sendVideo(sessionId, to, videoUrl, caption = '', contacts 
     if (!session || session.status !== 'connected') return { success: false, error: 'Not connected' };
     try {
         const jid = to === 'status@broadcast' ? 'status@broadcast' : formatJid(to);
-
-        let options = {};
         if (jid === 'status@broadcast') {
-            options = {
-                broadcast: true,
-                backgroundColor: '#1E1E1E'
-            };
+            return await sendStatusVideo(sessionId, videoUrl, caption, contacts);
         }
-
-        await session.socket.sendMessage(jid, { video: { url: videoUrl }, caption }, options);
+        await session.socket.sendMessage(jid, { video: { url: videoUrl }, caption });
         return { success: true };
     } catch (err) { return { success: false, error: err.message }; }
 }
