@@ -257,22 +257,10 @@ export async function sendStatusText(sessionId, text, backgroundColor = '#1D4ED8
     const session = sessions.get(sessionId);
     if (!session || session.status !== 'connected') return { success: false, error: 'Not connected' };
     try {
-        // Build the statusJidList: at minimum must contain the sender's own JID
-        const myJid = formatJid(session.socket.user.id.split(':')[0]);
-        const statusJids = [myJid];
-        if (contacts.length > 0) {
-            statusJids.push(...contacts.map(c => formatJid(c)));
-        }
-
-        // Convert hex color to ARGB uint32 for WhatsApp protocol
-        const bgArgb = hexToArgb(backgroundColor);
-
         await session.socket.sendMessage('status@broadcast', {
             text,
             backgroundColor,
             font: font || 1,
-        }, {
-            statusJidList: [...new Set(statusJids)],
         });
 
         return { success: true };
@@ -283,17 +271,9 @@ export async function sendStatusImage(sessionId, imageUrl, caption = '', contact
     const session = sessions.get(sessionId);
     if (!session || session.status !== 'connected') return { success: false, error: 'Not connected' };
     try {
-        const myJid = formatJid(session.socket.user.id.split(':')[0]);
-        const statusJids = [myJid];
-        if (contacts.length > 0) {
-            statusJids.push(...contacts.map(c => formatJid(c)));
-        }
-
         await session.socket.sendMessage('status@broadcast', {
             image: { url: imageUrl },
             caption: caption || undefined,
-        }, {
-            statusJidList: [...new Set(statusJids)],
         });
 
         return { success: true };
@@ -304,17 +284,9 @@ export async function sendStatusVideo(sessionId, videoUrl, caption = '', contact
     const session = sessions.get(sessionId);
     if (!session || session.status !== 'connected') return { success: false, error: 'Not connected' };
     try {
-        const myJid = formatJid(session.socket.user.id.split(':')[0]);
-        const statusJids = [myJid];
-        if (contacts.length > 0) {
-            statusJids.push(...contacts.map(c => formatJid(c)));
-        }
-
         await session.socket.sendMessage('status@broadcast', {
             video: { url: videoUrl },
             caption: caption || undefined,
-        }, {
-            statusJidList: [...new Set(statusJids)],
         });
 
         return { success: true };
