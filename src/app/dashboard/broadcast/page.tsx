@@ -2,13 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { Send, Plus, Play, Pause, CheckCircle, XCircle, Clock, Trash2, Loader2 } from 'lucide-react';
+import { Send, Plus, Play, Pause, CheckCircle, XCircle, Clock, Trash2, Loader2, RotateCw } from 'lucide-react';
 import type { Campaign } from '@/types';
 
 export default function BroadcastPage() {
     const [campaigns, setCampaigns] = useState<Campaign[]>([]);
     const [loading, setLoading] = useState(true);
     const [deleting, setDeleting] = useState<string | null>(null);
+    const [running, setRunning] = useState<string | null>(null);
     const supabase = createClient();
 
     useEffect(() => {
@@ -44,6 +45,21 @@ export default function BroadcastPage() {
             alert('Gagal menghapus campaign');
         } finally {
             setDeleting(null);
+        }
+    };
+
+    const runCampaign = async (id: string) => {
+        setRunning(id);
+        try {
+            const res = await fetch(`/api/campaigns/${id}/run`, { method: 'POST' });
+            const data = await res.json();
+            if (!data.success) alert('Gagal: ' + (data.error || 'Unknown'));
+            // Reload to show updated counts
+            loadCampaigns();
+        } catch {
+            alert('Gagal menjalankan broadcast');
+        } finally {
+            setRunning(null);
         }
     };
 
@@ -141,15 +157,28 @@ export default function BroadcastPage() {
                                         {new Date(campaign.created_at).toLocaleDateString('id-ID')}
                                     </td>
                                     <td style={{ textAlign: 'center' }}>
-                                        <button
-                                            className="btn btn-ghost btn-icon btn-sm"
-                                            style={{ color: 'var(--color-danger)' }}
-                                            onClick={() => deleteCampaign(campaign.id, campaign.name)}
-                                            disabled={deleting === campaign.id}
-                                            title="Hapus campaign"
-                                        >
-                                            {deleting === campaign.id ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
-                                        </button>
+                                        <div style={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
+                                            {(campaign.status === 'running' || campaign.status === 'draft') && (
+                                                <button
+                                                    className="btn btn-ghost btn-icon btn-sm"
+                                                    style={{ color: 'var(--color-success)' }}
+                                                    onClick={() => runCampaign(campaign.id)}
+                                                    disabled={running === campaign.id}
+                                                    title="Jalankan broadcast"
+                                                >
+                                                    {running === campaign.id ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />}
+                                                </button>
+                                            )}
+                                            <button
+                                                className="btn btn-ghost btn-icon btn-sm"
+                                                style={{ color: 'var(--color-danger)' }}
+                                                onClick={() => deleteCampaign(campaign.id, campaign.name)}
+                                                disabled={deleting === campaign.id}
+                                                title="Hapus campaign"
+                                            >
+                                                {deleting === campaign.id ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}

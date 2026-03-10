@@ -77,19 +77,10 @@ export async function POST(request: NextRequest) {
 
         if (error) throw error;
 
-        // If auto_start, trigger the broadcast queue
+        // If auto_start, create pending message records
+        // Note: actual sending is triggered client-side via /api/campaigns/[id]/run
         if (auto_start && !scheduled_at) {
-            // Create pending message records
             await startBroadcast(supabase, campaign, profile.tenant_id);
-
-            // Fire-and-forget: trigger the actual broadcast runner
-            // Forward cookies so the /run endpoint can authenticate
-            const baseUrl = request.nextUrl.origin;
-            const cookieHeader = request.headers.get('cookie') || '';
-            fetch(`${baseUrl}/api/campaigns/${campaign.id}/run`, {
-                method: 'POST',
-                headers: { 'Cookie': cookieHeader },
-            }).catch(err => console.error('[Broadcast] Run trigger failed:', err.message));
         }
 
         return NextResponse.json({ success: true, data: campaign });

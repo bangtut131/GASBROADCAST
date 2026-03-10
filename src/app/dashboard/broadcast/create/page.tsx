@@ -110,6 +110,13 @@ export default function CreateBroadcastPage() {
 
             const data = await res.json();
             if (!data.success) throw new Error(data.error);
+
+            // Trigger broadcast execution from client-side (reliable, unlike server fire-and-forget)
+            if (sendNow && data.data?.id) {
+                fetch(`/api/campaigns/${data.data.id}/run`, { method: 'POST' })
+                    .catch(err => console.error('Run trigger failed:', err));
+            }
+
             router.push('/dashboard/broadcast');
         } catch (err: any) {
             setError(err.message);
