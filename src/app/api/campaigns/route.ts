@@ -79,9 +79,17 @@ export async function POST(request: NextRequest) {
 
         // If auto_start, trigger the broadcast queue
         if (auto_start && !scheduled_at) {
-            // Start the broadcast immediately in background
-            // For now, we'll simulate by creating broadcast_messages records
+            // Create pending message records
             await startBroadcast(supabase, campaign, profile.tenant_id);
+
+            // Fire-and-forget: trigger the actual broadcast runner
+            // Forward cookies so the /run endpoint can authenticate
+            const baseUrl = request.nextUrl.origin;
+            const cookieHeader = request.headers.get('cookie') || '';
+            fetch(`${baseUrl}/api/campaigns/${campaign.id}/run`, {
+                method: 'POST',
+                headers: { 'Cookie': cookieHeader },
+            }).catch(err => console.error('[Broadcast] Run trigger failed:', err.message));
         }
 
         return NextResponse.json({ success: true, data: campaign });
@@ -120,9 +128,6 @@ async function startBroadcast(supabase: any, campaign: any, tenantId: string) {
             .from('campaigns')
             .update({ total_recipients: phones.length, status: 'running' })
             .eq('id', campaign.id);
-
-        // Note: Actual sending happens through the /api/campaigns/[id]/run endpoint
-        // which processes the queue with delays
     } catch (err) {
         console.error('startBroadcast error:', err);
     }
