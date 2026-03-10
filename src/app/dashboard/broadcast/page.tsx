@@ -2,12 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { Send, Plus, Play, Pause, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { Send, Plus, Play, Pause, CheckCircle, XCircle, Clock, Trash2, Loader2 } from 'lucide-react';
 import type { Campaign } from '@/types';
 
 export default function BroadcastPage() {
     const [campaigns, setCampaigns] = useState<Campaign[]>([]);
     const [loading, setLoading] = useState(true);
+    const [deleting, setDeleting] = useState<string | null>(null);
     const supabase = createClient();
 
     useEffect(() => {
@@ -25,6 +26,24 @@ export default function BroadcastPage() {
             console.error('Error loading campaigns:', err);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const deleteCampaign = async (id: string, name: string) => {
+        if (!confirm(`Hapus campaign "${name}"? Semua data broadcast terkait juga akan dihapus.`)) return;
+        setDeleting(id);
+        try {
+            const res = await fetch(`/api/campaigns/${id}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (data.success) {
+                setCampaigns(prev => prev.filter(c => c.id !== id));
+            } else {
+                alert('Gagal menghapus: ' + (data.error || 'Unknown error'));
+            }
+        } catch (err) {
+            alert('Gagal menghapus campaign');
+        } finally {
+            setDeleting(null);
         }
     };
 
@@ -82,11 +101,12 @@ export default function BroadcastPage() {
                                 <th>Terkirim</th>
                                 <th>Gagal</th>
                                 <th>Tanggal</th>
+                                <th style={{ width: 60, textAlign: 'center' }}>Aksi</th>
                             </tr>
                         </thead>
                         <tbody>
                             {campaigns.map(campaign => (
-                                <tr key={campaign.id} style={{ cursor: 'pointer' }}>
+                                <tr key={campaign.id}>
                                     <td>
                                         <span style={{ fontWeight: 500, color: 'var(--color-text-primary)' }}>
                                             {campaign.name}
@@ -119,6 +139,17 @@ export default function BroadcastPage() {
                                     </td>
                                     <td style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-xs)' }}>
                                         {new Date(campaign.created_at).toLocaleDateString('id-ID')}
+                                    </td>
+                                    <td style={{ textAlign: 'center' }}>
+                                        <button
+                                            className="btn btn-ghost btn-icon btn-sm"
+                                            style={{ color: 'var(--color-danger)' }}
+                                            onClick={() => deleteCampaign(campaign.id, campaign.name)}
+                                            disabled={deleting === campaign.id}
+                                            title="Hapus campaign"
+                                        >
+                                            {deleting === campaign.id ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                                        </button>
                                     </td>
                                 </tr>
                             ))}
