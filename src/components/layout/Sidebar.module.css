@@ -1,0 +1,350 @@
+/* ================================================
+   Premium Sidebar — GasBroadcast
+   Glassmorphism + Gradient + Micro-animations
+   ================================================ */
+
+.sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 260px;
+    background: linear-gradient(180deg, #0c0e1a 0%, #080a14 100%);
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    display: flex;
+    flex-direction: column;
+    padding: 16px 12px;
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+        padding 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 100;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.sidebar::-webkit-scrollbar {
+    width: 3px;
+}
+
+.sidebar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.sidebar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 3px;
+}
+
+.sidebarCollapsed {
+    width: 72px;
+    padding: 16px 8px;
+}
+
+/* ── Logo ── */
+.logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 10px;
+    margin-bottom: 24px;
+    flex-shrink: 0;
+    text-decoration: none;
+}
+
+.logoIcon {
+    width: 42px;
+    height: 42px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #6C63FF 0%, #a855f7 50%, #ec4899 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    flex-shrink: 0;
+    box-shadow: 0 4px 20px rgba(108, 99, 255, 0.4),
+        0 0 0 1px rgba(108, 99, 255, 0.15);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.logo:hover .logoIcon {
+    transform: scale(1.06) rotate(-3deg);
+    box-shadow: 0 6px 25px rgba(108, 99, 255, 0.55),
+        0 0 0 1px rgba(108, 99, 255, 0.3);
+}
+
+.logoTextWrap {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.logoText {
+    font-size: 17px;
+    font-weight: 700;
+    color: #ffffff;
+    white-space: nowrap;
+    letter-spacing: -0.4px;
+    line-height: 1.2;
+}
+
+.logoVersion {
+    font-size: 10px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.3);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    line-height: 1.4;
+}
+
+/* ── Navigation ── */
+.nav {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+}
+
+.section {
+    margin-bottom: 8px;
+}
+
+.sectionTitle {
+    padding: 10px 12px 6px;
+    font-size: 10px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.28);
+    text-transform: uppercase;
+    letter-spacing: 1.4px;
+    user-select: none;
+}
+
+.sectionDot {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.12);
+    margin: 8px auto;
+}
+
+.navItem {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 13.5px;
+    font-weight: 500;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    text-decoration: none !important;
+    white-space: nowrap;
+    min-height: 42px;
+    position: relative;
+    cursor: pointer;
+    border: 1px solid transparent;
+}
+
+.navItem:hover {
+    color: rgba(255, 255, 255, 0.95);
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.06);
+}
+
+.navItem:hover .navIcon {
+    transform: scale(1.15);
+    color: rgba(255, 255, 255, 0.95);
+}
+
+.navItemActive {
+    color: #ffffff !important;
+    background: linear-gradient(135deg,
+            rgba(108, 99, 255, 0.18) 0%,
+            rgba(168, 85, 247, 0.12) 100%) !important;
+    border-color: rgba(108, 99, 255, 0.2) !important;
+    box-shadow: 0 0 20px rgba(108, 99, 255, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.navItemActive .navIcon {
+    color: #a78bfa !important;
+}
+
+.indicator {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 22px;
+    border-radius: 0 4px 4px 0;
+    background: linear-gradient(180deg, #6C63FF, #a855f7);
+    box-shadow: 0 0 12px rgba(108, 99, 255, 0.6),
+        0 0 4px rgba(108, 99, 255, 0.4);
+}
+
+.navIcon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.navLabel {
+    flex: 1;
+    line-height: 1.3;
+}
+
+.navBadge {
+    padding: 2px 9px;
+    font-size: 10px;
+    font-weight: 600;
+    background: linear-gradient(135deg, #6C63FF, #a855f7);
+    color: white;
+    border-radius: 20px;
+    letter-spacing: 0.3px;
+    box-shadow: 0 2px 10px rgba(108, 99, 255, 0.4);
+    animation: badgePulse 3s ease-in-out infinite;
+}
+
+@keyframes badgePulse {
+
+    0%,
+    100% {
+        box-shadow: 0 2px 10px rgba(108, 99, 255, 0.4);
+    }
+
+    50% {
+        box-shadow: 0 2px 16px rgba(108, 99, 255, 0.7);
+    }
+}
+
+/* ── Upgrade Banner ── */
+.upgrade {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px;
+    background: linear-gradient(135deg,
+            rgba(108, 99, 255, 0.1) 0%,
+            rgba(168, 85, 247, 0.08) 50%,
+            rgba(236, 72, 153, 0.06) 100%);
+    border: 1px solid rgba(108, 99, 255, 0.15);
+    border-radius: 16px;
+    margin-top: 12px;
+    margin-bottom: 12px;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.upgradeGlow {
+    position: absolute;
+    width: 80px;
+    height: 80px;
+    background: radial-gradient(circle, rgba(108, 99, 255, 0.25), transparent 70%);
+    top: -30px;
+    right: -15px;
+    pointer-events: none;
+    animation: glowFloat 4s ease-in-out infinite;
+}
+
+@keyframes glowFloat {
+
+    0%,
+    100% {
+        transform: translate(0, 0);
+    }
+
+    50% {
+        transform: translate(-5px, 5px);
+    }
+}
+
+.upgrade:hover {
+    border-color: rgba(108, 99, 255, 0.35);
+    background: linear-gradient(135deg,
+            rgba(108, 99, 255, 0.16) 0%,
+            rgba(168, 85, 247, 0.12) 50%,
+            rgba(236, 72, 153, 0.1) 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px rgba(108, 99, 255, 0.2);
+}
+
+.upgradeIcon {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #6C63FF, #a855f7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    flex-shrink: 0;
+    box-shadow: 0 4px 12px rgba(108, 99, 255, 0.35);
+    position: relative;
+    z-index: 1;
+}
+
+.upgradeTextWrap {
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 1;
+}
+
+.upgradeTitle {
+    font-size: 13px;
+    font-weight: 600;
+    color: #ffffff;
+    line-height: 1.3;
+}
+
+.upgradeDesc {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.4);
+    line-height: 1.4;
+}
+
+/* ── Toggle ── */
+.toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(12, 14, 26, 0.9);
+    color: rgba(255, 255, 255, 0.35);
+    cursor: pointer;
+    position: absolute;
+    top: 50%;
+    right: -14px;
+    transform: translateY(-50%);
+    transition: all 0.25s ease;
+    z-index: 10;
+    backdrop-filter: blur(10px);
+}
+
+.toggle:hover {
+    background: rgba(108, 99, 255, 0.25);
+    border-color: rgba(108, 99, 255, 0.5);
+    color: #ffffff;
+    box-shadow: 0 0 16px rgba(108, 99, 255, 0.35);
+    transform: translateY(-50%) scale(1.1);
+}
+
+/* ── Collapsed nav item centering ── */
+.sidebarCollapsed .navItem {
+    justify-content: center;
+    padding: 10px 8px;
+}
+
+.sidebarCollapsed .navIcon {
+    width: 24px;
+    height: 24px;
+}
