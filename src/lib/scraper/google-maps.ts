@@ -47,7 +47,6 @@ export async function scrapeGoogleMaps(
             defaultViewport: { width: 1366, height: 768 },
             executablePath: await chromium.executablePath(),
             headless: true,
-            ignoreHTTPSErrors: true,
         });
 
         const page = await browser.newPage();
