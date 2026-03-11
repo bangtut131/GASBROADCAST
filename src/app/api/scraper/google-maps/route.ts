@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Limit max results to prevent abuse
-        const safeMax = Math.min(Math.max(maxResults, 5), 60);
+        const safeMax = Math.min(Math.max(maxResults, 5), 120);
 
         const { results, error } = await scrapeGoogleMaps(query.trim(), safeMax);
 
