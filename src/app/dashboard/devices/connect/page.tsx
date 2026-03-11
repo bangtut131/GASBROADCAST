@@ -29,6 +29,36 @@ export default function DeviceConnectPage() {
     const qrInterval = useRef<NodeJS.Timeout | null>(null);
     const router = useRouter();
 
+    // Auto-fill from existing device config
+    const [configMode, setConfigMode] = useState<'default' | 'manual'>('default');
+    const [defaultBridgeUrl, setDefaultBridgeUrl] = useState('');
+    const [defaultApiSecret, setDefaultApiSecret] = useState('');
+    const [hasExistingConfig, setHasExistingConfig] = useState(false);
+
+    useEffect(() => {
+        // Fetch existing wa-web devices to get their bridge config
+        fetch('/api/devices')
+            .then(r => r.json())
+            .then(data => {
+                if (data.success && data.data) {
+                    const waWebDevice = data.data.find((d: any) => d.provider === 'wa-web' && d.provider_config);
+                    if (waWebDevice) {
+                        const config = waWebDevice.provider_config as any;
+                        const existingUrl = config.apiUrl || config.bridgeUrl || '';
+                        const existingSecret = config.apiKey || config.apiSecret || '';
+                        if (existingUrl) {
+                            setDefaultBridgeUrl(existingUrl);
+                            setDefaultApiSecret(existingSecret);
+                            setBridgeUrl(existingUrl);
+                            setBridgeApiSecret(existingSecret);
+                            setHasExistingConfig(true);
+                        }
+                    }
+                }
+            })
+            .catch(() => {});
+    }, []);
+
     // Poll QR code every 5s for WAHA and WA Web (bridge)
     useEffect(() => {
         if (step === 'connecting' && (provider === 'waha' || provider === 'wa-web') && deviceId) {
@@ -220,32 +250,77 @@ export default function DeviceConnectPage() {
 
                             {provider === 'wa-web' && (
                                 <>
-                                    <div className="info-box" style={{ borderColor: 'rgba(34,197,94,0.3)', background: 'rgba(34,197,94,0.08)' }}>
-                                        <Info size={16} style={{ flexShrink: 0, color: '#22c55e' }} />
-                                        <span>Bridge URL sudah diisi otomatis. Cukup masukkan API Secret yang sama dengan yang Anda set di Railway bridge service.</span>
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">Bridge URL *</label>
-                                        <input
-                                            type="text"
-                                            className="form-input"
-                                            placeholder="https://your-bridge.up.railway.app"
-                                            value={bridgeUrl}
-                                            onChange={e => setBridgeUrl(e.target.value)}
-                                        />
-                                        <span className="form-hint">URL service bridge Baileys di Railway</span>
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">API Secret *</label>
-                                        <input
-                                            type="password"
-                                            className="form-input"
-                                            placeholder="gas_smart_broadcast_bridge"
-                                            value={bridgeApiSecret}
-                                            onChange={e => setBridgeApiSecret(e.target.value)}
-                                        />
-                                        <span className="form-hint">Sama dengan API_SECRET di environment bridge</span>
-                                    </div>
+                                    {hasExistingConfig && (
+                                        <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
+                                            <button type="button" className={`btn btn-sm ${configMode === 'default' ? 'btn-primary' : 'btn-secondary'}`}
+                                                onClick={() => {
+                                                    setConfigMode('default');
+                                                    setBridgeUrl(defaultBridgeUrl);
+                                                    setBridgeApiSecret(defaultApiSecret);
+                                                }}>
+                                                <Zap size={14} /> Default (Otomatis)
+                                            </button>
+                                            <button type="button" className={`btn btn-sm ${configMode === 'manual' ? 'btn-primary' : 'btn-secondary'}`}
+                                                onClick={() => {
+                                                    setConfigMode('manual');
+                                                    setBridgeUrl('');
+                                                    setBridgeApiSecret('');
+                                                }}>
+                                                ✏️ Input Manual
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {configMode === 'default' && hasExistingConfig ? (
+                                        <div style={{ padding: 'var(--space-4)', border: '1px solid rgba(34,197,94,0.4)', borderRadius: 'var(--radius-md)', background: 'rgba(34,197,94,0.06)' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
+                                                <CheckCircle size={16} style={{ color: '#22c55e' }} />
+                                                <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: '#22c55e' }}>Konfigurasi dari device sebelumnya</span>
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', fontSize: 'var(--text-sm)' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <span style={{ color: 'var(--color-text-muted)' }}>Bridge URL:</span>
+                                                    <code style={{ fontSize: 'var(--text-xs)', background: 'var(--color-bg-tertiary)', padding: '2px 8px', borderRadius: 4, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block' }}>{defaultBridgeUrl}</code>
+                                                </div>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <span style={{ color: 'var(--color-text-muted)' }}>API Secret:</span>
+                                                    <code style={{ fontSize: 'var(--text-xs)', background: 'var(--color-bg-tertiary)', padding: '2px 8px', borderRadius: 4 }}>{'•'.repeat(Math.min(defaultApiSecret.length, 20)) || 'Tidak diset'}</code>
+                                                </div>
+                                            </div>
+                                            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginTop: 'var(--space-2)', margin: 0 }}>
+                                                ⚡ Langsung klik "Hubungkan" tanpa perlu isi ulang
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="info-box" style={{ borderColor: 'rgba(34,197,94,0.3)', background: 'rgba(34,197,94,0.08)' }}>
+                                                <Info size={16} style={{ flexShrink: 0, color: '#22c55e' }} />
+                                                <span>{hasExistingConfig ? 'Masukkan konfigurasi bridge yang berbeda.' : 'Masukkan Bridge URL dan API Secret dari Railway bridge service Anda.'}</span>
+                                            </div>
+                                            <div className="form-group">
+                                                <label className="form-label">Bridge URL *</label>
+                                                <input
+                                                    type="text"
+                                                    className="form-input"
+                                                    placeholder="https://your-bridge.up.railway.app"
+                                                    value={bridgeUrl}
+                                                    onChange={e => setBridgeUrl(e.target.value)}
+                                                />
+                                                <span className="form-hint">URL service bridge Baileys di Railway</span>
+                                            </div>
+                                            <div className="form-group">
+                                                <label className="form-label">API Secret *</label>
+                                                <input
+                                                    type="password"
+                                                    className="form-input"
+                                                    placeholder="gas_smart_broadcast_bridge"
+                                                    value={bridgeApiSecret}
+                                                    onChange={e => setBridgeApiSecret(e.target.value)}
+                                                />
+                                                <span className="form-hint">Sama dengan API_SECRET di environment bridge</span>
+                                            </div>
+                                        </>
+                                    )}
                                 </>
                             )}
 
