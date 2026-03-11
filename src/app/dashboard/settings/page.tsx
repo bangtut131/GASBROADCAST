@@ -5,7 +5,7 @@ import {
     User, Bell, Globe, Shield, Key, ExternalLink,
     Save, Loader2, CheckCircle, Copy, AlertCircle,
     Users, Plus, Trash2, Power, X, CreditCard, Sparkles,
-    Zap, Crown, Check
+    Zap, Crown, Check, Phone, Mail
 } from 'lucide-react';
 
 interface Profile {
@@ -77,6 +77,11 @@ export default function SettingsPage() {
     const [notifSaving, setNotifSaving] = useState(false);
     const [notifSaved, setNotifSaved] = useState(false);
 
+    // Platform settings (for upgrade contact)
+    const [platformSettings, setPlatformSettings] = useState<Record<string, string>>({});
+    const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+    const [upgradeTarget, setUpgradeTarget] = useState('');
+
     useEffect(() => {
         fetch('/api/settings/profile')
             .then(r => r.json())
@@ -95,6 +100,12 @@ export default function SettingsPage() {
                 }
             })
             .finally(() => setLoading(false));
+
+        // Fetch platform settings for upgrade contact
+        fetch('/api/admin/settings')
+            .then(r => r.json())
+            .then(d => { if (d.success) setPlatformSettings(d.data); })
+            .catch(() => {});
     }, []);
 
     // Load team members when tab switches to team
@@ -356,7 +367,7 @@ export default function SettingsPage() {
                                                         {isCurrentPlan ? (
                                                             <span className="badge badge-accent" style={{ fontSize: 'var(--text-xs)' }}>Paket Saat Ini</span>
                                                         ) : (
-                                                            <button className="btn btn-sm btn-secondary" style={{ width: '100%', fontSize: 'var(--text-xs)' }} onClick={() => alert(`Hubungi admin untuk upgrade ke ${planNames[planKey]}.\n\nWhatsApp: 628xxx\nEmail: admin@gasbroadcast.com`)}>
+                                                            <button className="btn btn-sm btn-secondary" style={{ width: '100%', fontSize: 'var(--text-xs)' }} onClick={() => { setUpgradeTarget(planNames[planKey]); setShowUpgradeModal(true); }}>
                                                                 {PLAN_LIMITS[planKey].priceNum > (PLAN_LIMITS[currentPlan]?.priceNum || 0) ? 'Upgrade' : 'Pilih'}
                                                             </button>
                                                         )}
@@ -369,6 +380,43 @@ export default function SettingsPage() {
                                     <div style={{ marginTop: 'var(--space-4)', padding: 'var(--space-3)', background: 'var(--color-info-soft)', border: '1px solid rgba(59,130,246,0.2)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-sm)' }}>
                                         💡 Untuk upgrade paket, silakan hubungi tim sales kami via WhatsApp atau email. Pembayaran tersedia melalui transfer bank atau e-wallet.
                                     </div>
+
+                                    {/* Upgrade Contact Modal */}
+                                    {showUpgradeModal && (
+                                        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }} onClick={() => setShowUpgradeModal(false)}>
+                                            <div style={{ background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-6)', maxWidth: 420, width: '90%', border: '1px solid var(--color-border)' }} onClick={e => e.stopPropagation()}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
+                                                    <h3 style={{ fontSize: 'var(--text-md)', fontWeight: 700 }}>🚀 Upgrade ke {upgradeTarget}</h3>
+                                                    <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setShowUpgradeModal(false)}><X size={16} /></button>
+                                                </div>
+                                                <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)', marginBottom: 'var(--space-4)' }}>
+                                                    {platformSettings.upgrade_message || 'Hubungi kami untuk upgrade paket langganan Anda.'}
+                                                </p>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                                                    {platformSettings.owner_whatsapp && (
+                                                        <a href={`https://wa.me/${platformSettings.owner_whatsapp}?text=${encodeURIComponent(`Halo, saya ingin upgrade ke paket ${upgradeTarget}`)}`} target="_blank" rel="noopener noreferrer" className="btn btn-primary" style={{ background: '#22c55e', borderColor: '#22c55e', justifyContent: 'center' }}>
+                                                            <Phone size={16} /> Chat WhatsApp
+                                                        </a>
+                                                    )}
+                                                    {platformSettings.owner_email && (
+                                                        <a href={`mailto:${platformSettings.owner_email}?subject=Upgrade ke ${upgradeTarget}&body=Halo, saya ingin upgrade ke paket ${upgradeTarget}`} className="btn btn-secondary" style={{ justifyContent: 'center' }}>
+                                                            <Mail size={16} /> Email: {platformSettings.owner_email}
+                                                        </a>
+                                                    )}
+                                                    {platformSettings.owner_phone && (
+                                                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', textAlign: 'center' }}>
+                                                            📞 Telepon: {platformSettings.owner_phone}
+                                                        </div>
+                                                    )}
+                                                    {!platformSettings.owner_whatsapp && !platformSettings.owner_email && (
+                                                        <div style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)', textAlign: 'center', fontStyle: 'italic' }}>
+                                                            Kontak belum diatur. Hubungi admin platform.
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 

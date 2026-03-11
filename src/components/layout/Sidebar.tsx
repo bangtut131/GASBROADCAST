@@ -19,6 +19,7 @@ import {
   UserCheck,
   Radio,
   Sparkles,
+  Crown,
 } from 'lucide-react';
 import s from './Sidebar.module.css';
 
@@ -52,6 +53,7 @@ const navSections = [
     items: [
       { label: 'API Keys', href: '/dashboard/api-keys', icon: <Key size={20} /> },
       { label: 'Settings', href: '/dashboard/settings', icon: <Settings size={20} /> },
+      { label: 'Admin Panel', href: '/admin', icon: <Crown size={20} />, badge: '👑' },
     ],
   },
 ];
