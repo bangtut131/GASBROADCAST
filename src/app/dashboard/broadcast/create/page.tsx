@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import {
     ArrowLeft, Send, Clock, Users, Smartphone, FileText,
     Image, Video, ChevronDown, Plus, X, Loader2, AlertCircle,
-    CheckCircle, Info, Upload, Download, Sparkles, Search
+    CheckCircle, Info, Upload, Download, Sparkles, Search,
+    Zap, Settings
 } from 'lucide-react';
 
 interface Device {
@@ -297,12 +298,33 @@ export default function CreateBroadcastPage() {
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Perangkat WhatsApp *</label>
-                                    <select className="form-select" value={selectedDevice} onChange={e => setSelectedDevice(e.target.value)}>
-                                        <option value="">-- Pilih Device --</option>
-                                        {devices.map(d => (
-                                            <option key={d.id} value={d.id}>{d.name} {d.phone_number ? `(${d.phone_number})` : ''}</option>
-                                        ))}
-                                    </select>
+                                    <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
+                                        <button type="button" className={`btn btn-sm ${selectedDevice && devices.length > 0 && selectedDevice === devices[0]?.id ? 'btn-primary' : 'btn-secondary'}`}
+                                            onClick={() => { if (devices.length > 0) setSelectedDevice(devices[0].id); }}>
+                                            <Zap size={14} /> Default
+                                        </button>
+                                        <button type="button" className={`btn btn-sm ${!selectedDevice || devices.findIndex(d => d.id === selectedDevice) > 0 ? 'btn-primary' : 'btn-secondary'}`}
+                                            onClick={() => setSelectedDevice('')}>
+                                            <Settings size={14} /> Pilih Manual
+                                        </button>
+                                    </div>
+                                    {selectedDevice && devices.find(d => d.id === selectedDevice) ? (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-3)', border: '1px solid var(--color-accent)', borderRadius: 'var(--radius-md)', background: 'var(--color-accent-soft)' }}>
+                                            <span style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--color-success)', flexShrink: 0 }} />
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>{devices.find(d => d.id === selectedDevice)?.name}</div>
+                                                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>{devices.find(d => d.id === selectedDevice)?.phone_number || 'Connected'}</div>
+                                            </div>
+                                            <span className="badge badge-success" style={{ fontSize: 10 }}>Terpilih</span>
+                                        </div>
+                                    ) : (
+                                        <select className="form-select" value={selectedDevice} onChange={e => setSelectedDevice(e.target.value)}>
+                                            <option value="">-- Pilih Device --</option>
+                                            {devices.map(d => (
+                                                <option key={d.id} value={d.id}>{d.name} {d.phone_number ? `(${d.phone_number})` : ''}</option>
+                                            ))}
+                                        </select>
+                                    )}
                                     {devices.length === 0 && (
                                         <span className="form-hint" style={{ color: 'var(--color-warning)' }}>
                                             ⚠️ Belum ada device terkoneksi. <a href="/dashboard/devices/connect">Hubungkan dulu →</a>
