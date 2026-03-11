@@ -86,7 +86,12 @@ export default function CreateBroadcastPage() {
             const res = await fetch('/api/devices');
             const data = await res.json();
             if (data.success) {
-                setDevices(data.data.filter((d: Device) => d.status === 'connected'));
+                const connected = data.data.filter((d: Device) => d.status === 'connected');
+                setDevices(connected);
+                // Auto-select first connected device (default)
+                if (connected.length > 0 && !selectedDevice) {
+                    setSelectedDevice(connected[0].id);
+                }
             }
         } catch { }
     };
