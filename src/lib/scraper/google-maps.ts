@@ -1,4 +1,5 @@
 import chromium from '@sparticuz/chromium';
+import puppeteer from 'puppeteer-core';
 
 export interface ScrapedBusiness {
     name: string;
@@ -17,13 +18,12 @@ function delay(min: number, max: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Random user agents for rotation
+// Random user agents
 const USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15',
 ];
 
 export async function scrapeGoogleMaps(
@@ -33,15 +33,9 @@ export async function scrapeGoogleMaps(
     let browser: any = null;
 
     try {
-        // Dynamic import for puppeteer-extra (ESM compatibility)
-        const puppeteerExtra = require('puppeteer-extra');
-        const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-        puppeteerExtra.use(StealthPlugin());
-
         const userAgent = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 
-        // Launch browser
-        browser = await puppeteerExtra.launch({
+        browser = await puppeteer.launch({
             args: [
                 ...chromium.args,
                 '--no-sandbox',
@@ -49,7 +43,6 @@ export async function scrapeGoogleMaps(
                 '--disable-dev-shm-usage',
                 '--disable-gpu',
                 '--single-process',
-                `--user-agent=${userAgent}`,
             ],
             defaultViewport: { width: 1366, height: 768 },
             executablePath: await chromium.executablePath(),
@@ -59,16 +52,28 @@ export async function scrapeGoogleMaps(
 
         const page = await browser.newPage();
 
-        // Set extra headers
+        // Manual stealth: set user agent
+        await page.setUserAgent(userAgent);
+
+        // Manual stealth: override navigator.webdriver
+        await page.evaluateOnNewDocument(() => {
+            Object.defineProperty(navigator, 'webdriver', { get: () => false });
+            // @ts-ignore
+            window.chrome = { runtime: {} };
+            Object.defineProperty(navigator, 'languages', { get: () => ['id-ID', 'id', 'en-US', 'en'] });
+            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+        });
+
+        // Set headers
         await page.setExtraHTTPHeaders({
             'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
         });
 
-        // Block unnecessary resources for speed
+        // Block heavy resources for speed
         await page.setRequestInterception(true);
         page.on('request', (req: any) => {
             const type = req.resourceType();
-            if (['image', 'media', 'font', 'stylesheet'].includes(type)) {
+            if (['image', 'media', 'font'].includes(type)) {
                 req.abort();
             } else {
                 req.continue();
@@ -79,42 +84,47 @@ export async function scrapeGoogleMaps(
         const searchUrl = `https://www.google.com/maps/search/${encodeURIComponent(query)}`;
         await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
 
-        // Wait for results to load
-        await delay(2000, 4000);
+        // Wait for content
+        await delay(3000, 5000);
 
-        // Try to find the results panel (scrollable list)
+        // Try accept cookies if prompted
+        try {
+            const acceptBtn = await page.$('button[aria-label*="Accept"], form[action*="consent"] button');
+            if (acceptBtn) { await acceptBtn.click(); await delay(1000, 2000); }
+        } catch { }
+
+        // Wait for results feed
         const feedSelector = 'div[role="feed"]';
         await page.waitForSelector(feedSelector, { timeout: 15000 }).catch(() => null);
 
-        // Scroll to load more results
+        // Scroll to load results
         let previousCount = 0;
         let scrollAttempts = 0;
-        const maxScrollAttempts = Math.ceil(maxResults / 7) + 3; // ~7 results per scroll
+        const maxScrollAttempts = Math.ceil(maxResults / 7) + 3;
 
         while (scrollAttempts < maxScrollAttempts) {
-            // Count current results
             const currentCount = await page.$$eval(
                 'div[role="feed"] > div > div > a[href*="/maps/place/"]',
-                (els: any[]) => els.length
+                (els: Element[]) => els.length
             ).catch(() => 0);
 
             if (currentCount >= maxResults) break;
-            if (currentCount === previousCount && scrollAttempts > 2) break; // No new results
+            if (currentCount === previousCount && scrollAttempts > 2) break;
             previousCount = currentCount;
 
-            // Scroll the feed panel
-            await page.evaluate((selector: string) => {
-                const feed = document.querySelector(selector);
+            // Scroll the feed
+            await page.evaluate((sel: string) => {
+                const feed = document.querySelector(sel);
                 if (feed) feed.scrollTop = feed.scrollHeight;
             }, feedSelector);
 
-            await delay(2500, 5000); // Human-like delay between scrolls
+            await delay(2500, 5000);
             scrollAttempts++;
         }
 
-        // Extract data from results
+        // Extract data
         const results: ScrapedBusiness[] = await page.evaluate((max: number) => {
-            const items: any[] = [];
+            const items: ScrapedBusiness[] = [];
             const cards = document.querySelectorAll('div[role="feed"] > div > div');
 
             for (const card of Array.from(cards)) {
@@ -126,21 +136,34 @@ export async function scrapeGoogleMaps(
                 const nameEl = card.querySelector('.fontHeadlineSmall, .qBF1Pd');
                 const ratingEl = card.querySelector('.MW4etd');
                 const reviewEl = card.querySelector('.UY7F9');
-                const categoryEl = card.querySelector('.W4Efsd .W4Efsd:nth-child(1) > span:nth-child(1)');
-                const addressEl = card.querySelector('.W4Efsd:nth-child(2) .W4Efsd, .W4Efsd .W4Efsd:nth-child(2)');
 
-                // Try to get phone from various possible locations
+                // Get all W4Efsd spans for category/address
+                const infoSpans = card.querySelectorAll('.W4Efsd');
+                let category = '';
+                let address = '';
+
+                infoSpans.forEach((span, idx) => {
+                    const text = span.textContent?.trim() || '';
+                    if (idx === 0 && text.includes('·')) {
+                        const parts = text.split('·');
+                        category = parts[parts.length - 1]?.trim() || '';
+                    }
+                    if (text && !category && idx < 3) category = text;
+                    if (text && text.length > 15 && idx > 0) address = text;
+                });
+
+                // Phone from text content
                 const allText = card.textContent || '';
-                const phoneMatch = allText.match(/(\+?\d[\d\s\-()]{8,})/);
+                const phoneMatch = allText.match(/(\+?\d[\d\s\-()]{8,}\d)/);
 
                 const name = nameEl?.textContent?.trim() || '';
                 if (!name) continue;
 
                 items.push({
                     name,
-                    phone: phoneMatch ? phoneMatch[1].replace(/[\s()-]/g, '') : '',
-                    address: addressEl?.textContent?.trim() || '',
-                    category: categoryEl?.textContent?.trim()?.replace(/·\s*/g, '') || '',
+                    phone: phoneMatch ? phoneMatch[1].replace(/[\s\-()]/g, '') : '',
+                    address: address,
+                    category: category.replace(/·\s*/g, '').trim(),
                     rating: ratingEl?.textContent?.trim() || '',
                     reviewCount: reviewEl?.textContent?.trim()?.replace(/[()]/g, '') || '',
                     website: '',
@@ -150,30 +173,43 @@ export async function scrapeGoogleMaps(
             return items;
         }, maxResults);
 
-        // For results with placeUrl but no phone, try to visit detail page
-        // (Only for first 10 to avoid too many requests)
+        // Visit detail pages for missing phone numbers (max 10)
         const needPhone = results.filter(r => !r.phone && r.placeUrl).slice(0, 10);
         for (const biz of needPhone) {
             try {
                 await page.goto(biz.placeUrl, { waitUntil: 'networkidle2', timeout: 15000 });
-                await delay(1500, 3000);
+                await delay(2000, 3500);
 
                 const detail = await page.evaluate(() => {
-                    const phoneBtn = document.querySelector('button[data-tooltip="Salin nomor telepon"], button[data-tooltip="Copy phone number"], a[href^="tel:"]');
-                    const phoneEl = phoneBtn?.closest('[data-item-id]')?.querySelector('.Io6YTe, .rogA2c') ||
-                        document.querySelector('a[href^="tel:"]');
-                    const websiteEl = document.querySelector('a[data-item-id="authority"]');
+                    // Look for phone button or tel: link
+                    const phoneEl = document.querySelector('a[href^="tel:"]');
+                    const phone = phoneEl?.getAttribute('href')?.replace('tel:', '') ||
+                        phoneEl?.textContent?.trim() || '';
+
+                    // Look for website link
+                    const websiteEl = document.querySelector('a[data-item-id="authority"]') as HTMLAnchorElement;
+                    const website = websiteEl?.href || '';
+
+                    // Fallback: look in all buttons with phone icon
+                    let fallbackPhone = '';
+                    if (!phone) {
+                        const buttons = document.querySelectorAll('button[data-item-id*="phone"]');
+                        buttons.forEach(btn => {
+                            const txt = btn.textContent?.trim() || '';
+                            const match = txt.match(/(\+?\d[\d\s\-()]{8,}\d)/);
+                            if (match) fallbackPhone = match[1];
+                        });
+                    }
+
                     return {
-                        phone: phoneEl?.textContent?.trim()?.replace(/[\s()-]/g, '') || '',
-                        website: (websiteEl as HTMLAnchorElement)?.href || '',
+                        phone: (phone || fallbackPhone).replace(/[\s\-()]/g, ''),
+                        website,
                     };
                 });
 
                 if (detail.phone) biz.phone = detail.phone;
                 if (detail.website) biz.website = detail.website;
-            } catch {
-                // Skip on error
-            }
+            } catch { /* skip */ }
         }
 
         return { results };
