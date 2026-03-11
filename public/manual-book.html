@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Manual Book — GAS Smart Broadcast</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+  :root {
+    --primary: #6C63FF;
+    --primary-light: #E8E6FF;
+    --success: #22c55e;
+    --warning: #F59E0B;
+    --danger: #ef4444;
+    --info: #3b82f6;
+    --text: #1a1a2e;
+    --text-muted: #6b7280;
+    --border: #e5e7eb;
+    --bg-alt: #f8f9fc;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 11pt;
+    line-height: 1.7;
+    color: var(--text);
+    background: white;
+  }
+
+  @media print {
+    body { font-size: 10pt; }
+    .page-break { page-break-before: always; }
+    .no-print { display: none !important; }
+    h2 { page-break-before: always; }
+    h2:first-of-type { page-break-before: auto; }
+  }
+
+  .container { max-width: 800px; margin: 0 auto; padding: 40px; }
+
+  /* Cover */
+  .cover {
+    text-align: center;
+    padding: 120px 40px;
+    background: linear-gradient(135deg, #1a1a2e 0%, #2d1b69 50%, #6C63FF 100%);
+    color: white;
+    border-radius: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+  }
+  .cover-logo { font-size: 60pt; margin-bottom: 20px; }
+  .cover h1 { font-size: 28pt; font-weight: 800; margin-bottom: 8px; letter-spacing: -0.5px; }
+  .cover h2 { font-size: 14pt; font-weight: 400; opacity: 0.85; margin-bottom: 40px; }
+  .cover-badge { display: inline-block; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); padding: 6px 20px; border-radius: 20px; font-size: 10pt; }
+  .cover-footer { margin-top: 60px; font-size: 9pt; opacity: 0.6; }
+
+  /* TOC */
+  .toc { padding: 40px; }
+  .toc h2 { font-size: 18pt; margin-bottom: 24px; color: var(--primary); border-bottom: 2px solid var(--primary); padding-bottom: 8px; page-break-before: auto; }
+  .toc-item { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px dotted var(--border); font-size: 11pt; }
+  .toc-item span:first-child { font-weight: 500; }
+  .toc-sub { padding-left: 24px; font-weight: 400; color: var(--text-muted); font-size: 10pt; }
+
+  /* Content */
+  h2 { font-size: 18pt; color: var(--primary); margin: 32px 0 16px; padding-bottom: 8px; border-bottom: 2px solid var(--primary-light); }
+  h3 { font-size: 13pt; color: var(--text); margin: 24px 0 10px; }
+  h4 { font-size: 11pt; color: var(--text); margin: 16px 0 8px; font-weight: 600; }
+  p { margin-bottom: 12px; }
+  ul, ol { margin: 8px 0 16px 24px; }
+  li { margin-bottom: 6px; }
+
+  .info-box {
+    background: var(--bg-alt);
+    border-left: 4px solid var(--info);
+    padding: 12px 16px;
+    margin: 12px 0;
+    border-radius: 0 8px 8px 0;
+    font-size: 10pt;
+  }
+  .warning-box {
+    background: #FFF7ED;
+    border-left: 4px solid var(--warning);
+    padding: 12px 16px;
+    margin: 12px 0;
+    border-radius: 0 8px 8px 0;
+    font-size: 10pt;
+  }
+  .danger-box {
+    background: #FEF2F2;
+    border-left: 4px solid var(--danger);
+    padding: 12px 16px;
+    margin: 12px 0;
+    border-radius: 0 8px 8px 0;
+    font-size: 10pt;
+  }
+  .success-box {
+    background: #F0FDF4;
+    border-left: 4px solid var(--success);
+    padding: 12px 16px;
+    margin: 12px 0;
+    border-radius: 0 8px 8px 0;
+    font-size: 10pt;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 20px;
+    font-size: 10pt;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 8px 12px;
+    text-align: left;
+  }
+  th {
+    background: var(--bg-alt);
+    font-weight: 600;
+    font-size: 9pt;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  code {
+    background: var(--bg-alt);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'SF Mono', Consolas, monospace;
+    font-size: 9pt;
+  }
+
+  .step-box {
+    display: flex;
+    gap: 12px;
+    margin: 12px 0;
+    align-items: flex-start;
+  }
+  .step-num {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 12pt;
+    flex-shrink: 0;
+  }
+  .step-content { flex: 1; }
+  .step-content strong { display: block; margin-bottom: 2px; }
+
+  .kbd { background: #eee; border: 1px solid #ccc; padding: 1px 6px; border-radius: 3px; font-size: 9pt; font-family: monospace; }
+
+  .feature-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 12px 0;
+  }
+  .feature-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .feature-card h4 { margin: 0 0 4px; font-size: 11pt; }
+  .feature-card p { margin: 0; font-size: 10pt; color: var(--text-muted); }
+
+  .footer-doc {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-muted);
+    font-size: 9pt;
+    border-top: 1px solid var(--border);
+    margin-top: 40px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ==================== COVER ==================== -->
+<div class="cover">
+  <div class="cover-logo">📡</div>
+  <h1>GAS Smart Broadcast</h1>
+  <h2>Manual Book & Panduan Penggunaan</h2>
+  <div class="cover-badge">Versi 1.0 — Maret 2026</div>
+  <div class="cover-footer">
+    Dokumen ini berisi panduan lengkap penggunaan aplikasi GAS Smart Broadcast<br>
+    untuk WhatsApp Broadcasting, Auto Reply, Multi-CS, dan WA Status Scheduler.
+  </div>
+</div>
+
+<!-- ==================== TOC ==================== -->
+<div class="container toc page-break">
+  <h2 style="page-break-before:auto;">Daftar Isi</h2>
+
+  <div class="toc-item"><span>1. Pendahuluan</span></div>
+  <div class="toc-item toc-sub"><span>1.1 Tentang GAS Smart Broadcast</span></div>
+  <div class="toc-item toc-sub"><span>1.2 Persyaratan Sistem</span></div>
+  <div class="toc-item toc-sub"><span>1.3 Arsitektur Aplikasi</span></div>
+
+  <div class="toc-item"><span>2. Memulai (Getting Started)</span></div>
+  <div class="toc-item toc-sub"><span>2.1 Registrasi Akun</span></div>
+  <div class="toc-item toc-sub"><span>2.2 Login</span></div>
+  <div class="toc-item toc-sub"><span>2.3 Menghubungkan Device WhatsApp</span></div>
+
+  <div class="toc-item"><span>3. Dashboard</span></div>
+  <div class="toc-item toc-sub"><span>3.1 Overview Dashboard</span></div>
+  <div class="toc-item toc-sub"><span>3.2 Analytics</span></div>
+
+  <div class="toc-item"><span>4. Broadcast</span></div>
+  <div class="toc-item toc-sub"><span>4.1 Membuat Broadcast Baru</span></div>
+  <div class="toc-item toc-sub"><span>4.2 Target Penerima</span></div>
+  <div class="toc-item toc-sub"><span>4.3 Random Greeting</span></div>
+  <div class="toc-item toc-sub"><span>4.4 Penjadwalan & Delay</span></div>
+  <div class="toc-item toc-sub"><span>4.5 Menjalankan & Monitoring</span></div>
+
+  <div class="toc-item"><span>5. WA Status</span></div>
+  <div class="toc-item toc-sub"><span>5.1 Membuat Jadwal Status</span></div>
+  <div class="toc-item toc-sub"><span>5.2 Multi-Device per Jadwal</span></div>
+
+  <div class="toc-item"><span>6. Contacts</span></div>
+  <div class="toc-item toc-sub"><span>6.1 Kelola Kontak</span></div>
+  <div class="toc-item toc-sub"><span>6.2 Import CSV</span></div>
+
+  <div class="toc-item"><span>7. Inbox & Auto Reply</span></div>
+
+  <div class="toc-item"><span>8. Multi-CS</span></div>
+
+  <div class="toc-item"><span>9. Devices</span></div>
+  <div class="toc-item toc-sub"><span>9.1 Provider: WA Web (Bridge)</span></div>
+  <div class="toc-item toc-sub"><span>9.2 Provider: WAHA</span></div>
+  <div class="toc-item toc-sub"><span>9.3 Provider: Official API</span></div>
+
+  <div class="toc-item"><span>10. Pengaturan (Settings)</span></div>
+  <div class="toc-item toc-sub"><span>10.1 Profil</span></div>
+  <div class="toc-item toc-sub"><span>10.2 Langganan & Paket</span></div>
+  <div class="toc-item toc-sub"><span>10.3 Team</span></div>
+  <div class="toc-item toc-sub"><span>10.4 Webhook</span></div>
+  <div class="toc-item toc-sub"><span>10.5 Notifikasi</span></div>
+
+  <div class="toc-item"><span>11. Admin Panel (Owner Only)</span></div>
+  <div class="toc-item toc-sub"><span>11.1 Dashboard Admin</span></div>
+  <div class="toc-item toc-sub"><span>11.2 Kelola Pelanggan</span></div>
+  <div class="toc-item toc-sub"><span>11.3 Profil Owner & Platform</span></div>
+
+  <div class="toc-item"><span>12. API Keys</span></div>
+
+  <div class="toc-item"><span>13. Troubleshooting</span></div>
+
+  <div class="toc-item"><span>14. FAQ</span></div>
+</div>
+
+<!-- ==================== BAB 1 ==================== -->
+<div class="container page-break">
+  <h2>1. Pendahuluan</h2>
+
+  <h3>1.1 Tentang GAS Smart Broadcast</h3>
+  <p>
+    <strong>GAS Smart Broadcast</strong> adalah platform WhatsApp marketing all-in-one yang memungkinkan Anda melakukan:
+  </p>
+  <div class="feature-grid">
+    <div class="feature-card">
+      <h4>📤 Broadcast Massal</h4>
+      <p>Kirim pesan ke ribuan kontak dengan personalisasi, greeting random, dan delay otomatis.</p>
+    </div>
+    <div class="feature-card">
+      <h4>📱 WA Status Scheduler</h4>
+      <p>Jadwalkan posting WhatsApp Status otomatis dengan gambar dan video.</p>
+    </div>
+    <div class="feature-card">
+      <h4>🤖 Auto Reply</h4>
+      <p>Balas pesan otomatis berdasarkan kata kunci yang dikonfigurasi.</p>
+    </div>
+    <div class="feature-card">
+      <h4>👥 Multi-CS</h4>
+      <p>Kelola tim customer service dengan assignment percakapan otomatis.</p>
+    </div>
+  </div>
+
+  <h3>1.2 Persyaratan Sistem</h3>
+  <table>
+    <tr><th>Komponen</th><th>Persyaratan</th></tr>
+    <tr><td>Browser</td><td>Chrome, Firefox, Edge, Safari (versi terbaru)</td></tr>
+    <tr><td>WhatsApp</td><td>Nomor WA aktif, bisa scan QR melalui "Perangkat Tertaut"</td></tr>
+    <tr><td>Koneksi</td><td>Internet stabil (min. 1 Mbps)</td></tr>
+    <tr><td>Device</td><td>Desktop, tablet, atau smartphone</td></tr>
+  </table>
+
+  <h3>1.3 Arsitektur Aplikasi</h3>
+  <table>
+    <tr><th>Komponen</th><th>Teknologi</th><th>Fungsi</th></tr>
+    <tr><td>Frontend</td><td>Next.js (React)</td><td>UI Dashboard</td></tr>
+    <tr><td>Backend</td><td>Next.js API Routes</td><td>Business Logic</td></tr>
+    <tr><td>Database</td><td>Supabase (PostgreSQL)</td><td>Data Store</td></tr>
+    <tr><td>WA Bridge</td><td>Baileys (Node.js)</td><td>Koneksi WhatsApp</td></tr>
+    <tr><td>Hosting</td><td>Railway</td><td>Deployment</td></tr>
+  </table>
+</div>
+
+<!-- ==================== BAB 2 ==================== -->
+<div class="container">
+  <h2>2. Memulai (Getting Started)</h2>
+
+  <h3>2.1 Registrasi Akun</h3>
+  <div class="step-box">
+    <div class="step-num">1</div>
+    <div class="step-content">
+      <strong>Buka halaman registrasi</strong>
+      Akses <code>/register</code> pada browser Anda.
+    </div>
+  </div>
+  <div class="step-box">
+    <div class="step-num">2</div>
+    <div class="step-content">
+      <strong>Isi form pendaftaran</strong>
+      Masukkan nama lengkap, email, dan password. Nama tenant/bisnis juga akan dibuatkan secara otomatis.
+    </div>
+  </div>
+  <div class="step-box">
+    <div class="step-num">3</div>
+    <div class="step-content">
+      <strong>Verifikasi email</strong>
+      Cek inbox email Anda dan klik link konfirmasi jika diminta.
+    </div>
+  </div>
+
+  <h3>2.2 Login</h3>
+  <p>Akses <code>/login</code> → masukkan email dan password → klik <strong>"Masuk"</strong>. Setelah berhasil, Anda akan diarahkan ke Dashboard.</p>
+
+  <h3>2.3 Menghubungkan Device WhatsApp</h3>
+  <p>Sebelum bisa mengirim broadcast atau menggunakan fitur lain, Anda harus menghubungkan setidaknya satu nomor WhatsApp.</p>
+
+  <div class="step-box">
+    <div class="step-num">1</div>
+    <div class="step-content">
+      <strong>Buka menu Devices</strong>
+      Klik <strong>Devices</strong> di sidebar, lalu klik <strong>"+ Hubungkan Device"</strong>.
+    </div>
+  </div>
+  <div class="step-box">
+    <div class="step-num">2</div>
+    <div class="step-content">
+      <strong>Pilih Provider</strong>
+      Pilih salah satu:
+      <ul>
+        <li><strong>WA Web (Bridge)</strong> ⭐ — Direkomendasikan. Scan QR seperti WhatsApp Web.</li>
+        <li><strong>WAHA</strong> — Self-hosted via Docker. Untuk yang punya server sendiri.</li>
+        <li><strong>Official API (Meta)</strong> — WhatsApp Business API resmi, berbayar.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="step-box">
+    <div class="step-num">3</div>
+    <div class="step-content">
+      <strong>Konfigurasi</strong>
+      <ul>
+        <li>Isi <strong>Nama Device</strong> (contoh: "Sales WA", "CS WA").</li>
+        <li>Untuk WA Web (Bridge): Bridge URL dan API Secret. Jika sudah pernah menghubungkan device sebelumnya, pilih <strong>⚡ Default (Otomatis)</strong> agar terisi otomatis.</li>
+        <li>Untuk device baru tanpa config sebelumnya, pilih <strong>✏️ Input Manual</strong> dan masukkan Bridge URL serta API Secret dari Railway.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="step-box">
+    <div class="step-num">4</div>
+    <div class="step-content">
+      <strong>Scan QR Code</strong>
+      Buka WhatsApp di HP → <em>Settings → Perangkat Tertaut → Tautkan Perangkat</em> → Scan QR Code yang tampil di layar. QR akan auto-refresh setiap 5 detik.
+    </div>
+  </div>
+  <div class="step-box">
+    <div class="step-num">5</div>
+    <div class="step-content">
+      <strong>Selesai!</strong>
+      Setelah QR ter-scan, status device berubah menjadi <strong>"Connected"</strong> (hijau). Device siap digunakan.
+    </div>
+  </div>
+
+  <div class="success-box">
+    <strong>💡 Tips:</strong> Anda bisa menghubungkan lebih dari satu device. Setiap device bisa digunakan untuk broadcast yang berbeda.
+  </div>
+</div>
+
+<!-- ==================== BAB 3 ==================== -->
+<div class="container">
+  <h2>3. Dashboard</h2>
+
+  <h3>3.1 Overview Dashboard</h3>
+  <p>Halaman utama setelah login (<code>/dashboard</code>) menampilkan ringkasan aktivitas:</p>
+  <ul>
+    <li><strong>Stat Cards</strong> — Total kontak, campaign aktif, pesan terkirim, device terhubung.</li>
+    <li><strong>Campaign Terbaru</strong> — Daftar broadcast terbaru beserta statusnya.</li>
+    <li><strong>Quick Actions</strong> — Shortcut untuk membuat broadcast baru atau menghubungkan device.</li>
+  </ul>
+
+  <h3>3.2 Analytics</h3>
+  <p>Halaman <code>/dashboard/analytics</code> menampilkan grafik dan statistik detail tentang performa broadcast, jumlah pesan terkirim per hari, dan tren pertumbuhan kontak.</p>
+</div>
+
+<!-- ==================== BAB 4 ==================== -->
+<div class="container">
+  <h2>4. Broadcast</h2>
+  <p>Fitur utama untuk mengirim pesan massal ke banyak kontak sekaligus.</p>
+
+  <h3>4.1 Membuat Broadcast Baru</h3>
+  <p>Buka <code>/dashboard/broadcast</code> → klik <strong>"Buat Broadcast"</strong>.</p>
+
+  <h4>A. Informasi Campaign</h4>
+  <ul>
+    <li><strong>Nama Campaign</strong> — Nama untuk identifikasi (misal: "Promo Lebaran 2026").</li>
+    <li><strong>Perangkat WhatsApp</strong> — Pilih device yang akan digunakan.
+      <ul>
+        <li><strong>⚡ Default</strong>: Otomatis memilih device pertama yang terhubung.</li>
+        <li><strong>⚙️ Pilih Manual</strong>: Dropdown untuk memilih device tertentu.</li>
+      </ul>
+    </li>
+  </ul>
+
+  <h3>4.2 Target Penerima</h3>
+  <p>Ada 4 cara untuk menentukan penerima broadcast:</p>
+  <table>
+    <tr><th>Metode</th><th>Deskripsi</th><th>Cara Penggunaan</th></tr>
+    <tr>
+      <td><strong>👥 Dari Kontak</strong></td>
+      <td>Pilih dari daftar kontak yang tersimpan</td>
+      <td>Checklist kontak satu per satu, filter by tag, search nama/nomor, atau "Pilih Semua"</td>
+    </tr>
+    <tr>
+      <td><strong>👥 Group</strong></td>
+      <td>Ambil anggota dari grup WA</td>
+      <td>Pilih grup WhatsApp dari dropdown</td>
+    </tr>
+    <tr>
+      <td><strong>📄 Upload CSV</strong></td>
+      <td>Upload file CSV berisi nomor telepon</td>
+      <td>Drag & drop file CSV atau klik area upload. Download template tersedia.</td>
+    </tr>
+    <tr>
+      <td><strong>✍️ Input Manual</strong></td>
+      <td>Ketik nomor satu per satu</td>
+      <td>Masukkan nomor (format: 628xxx), tekan Enter/klik "+" untuk menambah</td>
+    </tr>
+  </table>
+
+  <div class="info-box">
+    <strong>Format CSV:</strong> File harus memiliki kolom <code>phone</code> (wajib). Kolom opsional: <code>name</code>. Contoh:<br>
+    <code>phone,name</code><br>
+    <code>6281234567890,Budi</code><br>
+    <code>6289876543210,Siti</code>
+  </div>
+
+  <h4>B. Template Pesan</h4>
+  <p>Tulis pesan broadcast. Anda bisa menggunakan variabel personalisasi:</p>
+  <table>
+    <tr><th>Variabel</th><th>Diganti Dengan</th></tr>
+    <tr><td><code>{name}</code></td><td>Nama kontak penerima</td></tr>
+    <tr><td><code>{phone}</code></td><td>Nomor telepon penerima</td></tr>
+    <tr><td><code>{greeting}</code></td><td>Sapaan random dari daftar greeting (lihat 4.3)</td></tr>
+  </table>
+
+  <h3>4.3 Random Greeting</h3>
+  <p>Fitur ini menambahkan sapaan yang berbeda-beda untuk setiap penerima agar pesan terasa lebih personal.</p>
+
+  <div class="step-box">
+    <div class="step-num">1</div>
+    <div class="step-content">
+      <strong>Aktifkan toggle "Random Greeting"</strong>
+      Klik switch untuk mengaktifkan fitur ini.
+    </div>
+  </div>
+  <div class="step-box">
+    <div class="step-num">2</div>
+    <div class="step-content">
+      <strong>Tambah kata sapaan</strong>
+      Contoh: "Halo", "Hi", "Assalamualaikum", "Selamat pagi", "Hai kak". Klik "+" untuk menambah.
+    </div>
+  </div>
+  <div class="step-box">
+    <div class="step-num">3</div>
+    <div class="step-content">
+      <strong>Gunakan variabel {greeting} di template pesan</strong>
+      Contoh: <code>{greeting} {name}, kami punya promo spesial untuk Anda!</code>
+    </div>
+  </div>
+
+  <div class="success-box">
+    <strong>Hasil:</strong> Setiap penerima akan mendapat sapaan berbeda. Misalnya:<br>
+    • Budi: "Halo Budi, kami punya promo spesial untuk Anda!"<br>
+    • Siti: "Assalamualaikum Siti, kami punya promo spesial untuk Anda!"
+  </div>
+
+  <h3>4.4 Penjadwalan & Delay</h3>
+  <h4>Pengiriman</h4>
+  <ul>
+    <li><strong>Kirim Sekarang</strong> — Broadcast langsung dijalankan setelah submit.</li>
+    <li><strong>Jadwalkan</strong> — Pilih tanggal dan waktu untuk pengiriman otomatis.</li>
+  </ul>
+
+  <h4>Delay antar Pesan</h4>
+  <p>Atur jeda antar pengiriman pesan (dalam detik) untuk menghindari spam detection dari WhatsApp:</p>
+  <table>
+    <tr><th>Parameter</th><th>Default</th><th>Rekomendasi</th></tr>
+    <tr><td>Delay Minimum</td><td>3 detik</td><td>3–5 detik</td></tr>
+    <tr><td>Delay Maksimum</td><td>7 detik</td><td>7–15 detik</td></tr>
+  </table>
+
+  <div class="warning-box">
+    <strong>⚠️ Perhatian:</strong> Delay terlalu rendah berisiko nomor WA Anda diblokir oleh WhatsApp. Gunakan minimum 3 detik.
+  </div>
+
+  <h4>Media Attachment</h4>
+  <p>Anda bisa melampirkan media pada broadcast:</p>
+  <ul>
+    <li><strong>Gambar</strong> — Masukkan URL gambar (format: .jpg, .png, .webp).</li>
+    <li><strong>Video</strong> — Masukkan URL video (format: .mp4).</li>
+    <li><strong>Dokumen</strong> — Masukkan URL file (format: .pdf, .docx, dll).</li>
+  </ul>
+
+  <h3>4.5 Menjalankan & Monitoring</h3>
+  <p>Setelah broadcast dibuat, Anda bisa memonitor progresnya di halaman <code>/dashboard/broadcast</code>:</p>
+  <table>
+    <tr><th>Status</th><th>Keterangan</th></tr>
+    <tr><td>🟡 <strong>Draft</strong></td><td>Belum dijalankan</td></tr>
+    <tr><td>🔵 <strong>Running</strong></td><td>Sedang mengirim pesan</td></tr>
+    <tr><td>🟢 <strong>Completed</strong></td><td>Semua pesan terkirim</td></tr>
+    <tr><td>🔴 <strong>Failed</strong></td><td>Gagal (device disconnect, dll)</td></tr>
+    <tr><td>⏸️ <strong>Scheduled</strong></td><td>Dijadwalkan, belum waktunya</td></tr>
+  </table>
+</div>
+
+<!-- ==================== BAB 5 ==================== -->
+<div class="container">
+  <h2>5. WA Status</h2>
+  <p>Jadwalkan posting WhatsApp Status secara otomatis. Buka <code>/dashboard/wa-status</code>.</p>
+
+  <h3>5.1 Membuat Jadwal Status</h3>
+  <div class="step-box">
+    <div class="step-num">1</div>
+    <div class="step-content">
+      <strong>Klik "Buat Jadwal"</strong>
+      Isi judul, pilih tipe konten (teks/gambar/video), upload media, dan tulis caption.
+    </div>
+  </div>
+  <div class="step-box">
+    <div class="step-num">2</div>
+    <div class="step-content">
+      <strong>Pilih waktu posting</strong>
+      Tentukan tanggal dan jam kapan status harus diposting.
+    </div>
+  </div>
+  <div class="step-box">
+    <div class="step-num">3</div>
+    <div class="step-content">
+      <strong>Pilih device (multi-device)</strong>
+      Anda bisa memilih lebih dari satu device untuk posting status yang sama di beberapa nomor WA sekaligus. Jadwal tetap terbentuk 1 saja (konsolidasi).
+    </div>
+  </div>
+
+  <h3>5.2 Multi-Device per Jadwal</h3>
+  <p>Satu jadwal status bisa berjalan di beberapa nomor WA sekaligus. Ini berguna jika Anda punya beberapa akun WA marketing dan ingin posting konten yang sama di semua akun.</p>
+
+  <div class="info-box">
+    <strong>💡 Catatan:</strong> Jadwal multi-device hanya menghasilkan 1 entry di daftar jadwal (bukan duplikat per device).
+  </div>
+</div>
+
+<!-- ==================== BAB 6 ==================== -->
+<div class="container">
+  <h2>6. Contacts</h2>
+  <p>Kelola database kontak di <code>/dashboard/contacts</code>.</p>
+
+  <h3>6.1 Kelola Kontak</h3>
+  <ul>
+    <li><strong>Tambah kontak</strong> — Klik "+" untuk menambah kontak baru secara manual (nama, nomor, email, tag).</li>
+    <li><strong>Cari kontak</strong> — Gunakan kolom search untuk cari berdasarkan nama atau nomor.</li>
+    <li><strong>Filter by tag</strong> — Filter kontak berdasarkan tag/kategori.</li>
+    <li><strong>Edit/Hapus</strong> — Klik ikon edit/hapus pada baris kontak.</li>
+  </ul>
+
+  <h3>6.2 Import CSV</h3>
+  <p>Import kontak secara massal dari file CSV:</p>
+
+  <div class="step-box">
+    <div class="step-num">1</div>
+    <div class="step-content">
+      <strong>Download template</strong>
+      Klik tombol <strong>"Download Template"</strong> untuk mendapatkan format CSV yang benar.
+    </div>
+  </div>
+  <div class="step-box">
+    <div class="step-num">2</div>
+    <div class="step-content">
+      <strong>Isi data</strong>
+      Buka file CSV dengan Excel/Google Sheets, isi data kontak.
+    </div>
+  </div>
+  <div class="step-box">
+    <div class="step-num">3</div>
+    <div class="step-content">
+      <strong>Upload</strong>
+      Klik <strong>"Import CSV"</strong> → pilih file dan upload.
+    </div>
+  </div>
+
+  <p><strong>Format CSV yang didukung:</strong></p>
+  <table>
+    <tr><th>Kolom</th><th>Wajib</th><th>Contoh</th></tr>
+    <tr><td><code>phone</code></td><td>✅ Ya</td><td>6281234567890</td></tr>
+    <tr><td><code>name</code></td><td>❌ Opsional</td><td>Budi Santoso</td></tr>
+    <tr><td><code>email</code></td><td>❌ Opsional</td><td>budi@email.com</td></tr>
+    <tr><td><code>tags</code></td><td>❌ Opsional</td><td>vip,jakarta</td></tr>
+  </table>
+</div>
+
+<!-- ==================== BAB 7 ==================== -->
+<div class="container">
+  <h2>7. Inbox & Auto Reply</h2>
+
+  <h3>Inbox</h3>
+  <p>Halaman <code>/dashboard/inbox</code> menampilkan semua pesan masuk dari semua device yang terhubung. Anda bisa membalas pesan langsung dari dashboard.</p>
+
+  <h3>Auto Reply</h3>
+  <p>Konfigurasi balasan otomatis di <code>/dashboard/auto-reply</code>:</p>
+  <ul>
+    <li><strong>Keyword</strong> — Kata kunci trigger (contoh: "harga", "info", "promo").</li>
+    <li><strong>Response</strong> — Pesan balasan otomatis yang dikirim saat keyword terdeteksi.</li>
+    <li><strong>Match Type</strong> — Exact match (kata persis) atau Contains (mengandung kata).</li>
+    <li><strong>Device</strong> — Berlaku di device tertentu atau semua device.</li>
+  </ul>
+
+  <div class="info-box">
+    <strong>Contoh:</strong> Keyword: "harga" → Response: "Berikut daftar harga produk kami: ..."
+  </div>
+</div>
+
+<!-- ==================== BAB 8 ==================== -->
+<div class="container">
+  <h2>8. Multi-CS (Customer Service)</h2>
+  <p>Fitur Multi-CS di <code>/dashboard/cs</code> memungkinkan Anda mendistribusikan percakapan ke beberapa agen CS.</p>
+
+  <h4>Fitur:</h4>
+  <ul>
+    <li><strong>Assignment otomatis</strong> — Percakapan baru otomatis di-assign ke agen yang tersedia.</li>
+    <li><strong>Transfer</strong> — Transfer percakapan antar agen.</li>
+    <li><strong>Status agen</strong> — Tandai agen online/offline.</li>
+    <li><strong>Monitoring</strong> — Supervisor bisa memonitor semua percakapan.</li>
+  </ul>
+
+  <p><strong>Menambah agen CS:</strong> Buka <code>/dashboard/settings</code> → tab <strong>Team</strong> → klik <strong>"Tambah Agen"</strong>.</p>
+
+  <table>
+    <tr><th>Role</th><th>Kemampuan</th></tr>
+    <tr><td><strong>Agent</strong></td><td>Balas pesan yang di-assign</td></tr>
+    <tr><td><strong>Supervisor</strong></td><td>Monitor + transfer + balas semua</td></tr>
+    <tr><td><strong>Admin</strong></td><td>Kelola agent + semua kemampuan supervisor</td></tr>
+  </table>
+</div>
+
+<!-- ==================== BAB 9 ==================== -->
+<div class="container">
+  <h2>9. Devices</h2>
+  <p>Kelola perangkat WhatsApp di <code>/dashboard/devices</code>.</p>
+
+  <h3>9.1 Provider: WA Web (Bridge) ⭐ Recommended</h3>
+  <table>
+    <tr><th>Aspek</th><th>Detail</th></tr>
+    <tr><td>Cara koneksi</td><td>Scan QR Code</td></tr>
+    <tr><td>Biaya</td><td>Gratis</td></tr>
+    <tr><td>Setup</td><td>Termudah — Bridge URL + API Secret</td></tr>
+    <tr><td>Ketergantungan</td><td>Butuh service bridge Baileys di Railway</td></tr>
+  </table>
+
+  <h4>Auto-Fill Configuration</h4>
+  <p>Saat menghubungkan device ke-2, ke-3, dst., konfigurasi Bridge URL dan API Secret akan otomatis terisi dari device sebelumnya. Anda cukup isi <strong>Nama Device</strong> dan langsung klik <strong>"Hubungkan"</strong>.</p>
+
+  <h3>9.2 Provider: WAHA (Self-Hosted)</h3>
+  <table>
+    <tr><th>Aspek</th><th>Detail</th></tr>
+    <tr><td>Cara koneksi</td><td>Scan QR Code</td></tr>
+    <tr><td>Biaya</td><td>Gratis</td></tr>
+    <tr><td>Setup</td><td>Butuh Docker: <code>docker run -it -p 3000:3000 devlikeapro/waha</code></td></tr>
+    <tr><td>Ketergantungan</td><td>Server/VPS sendiri</td></tr>
+  </table>
+
+  <h3>9.3 Provider: Official API (Meta)</h3>
+  <table>
+    <tr><th>Aspek</th><th>Detail</th></tr>
+    <tr><td>Cara koneksi</td><td>Access Token + Phone Number ID</td></tr>
+    <tr><td>Biaya</td><td>Berbayar (sesuai Meta pricing)</td></tr>
+    <tr><td>Setup</td><td>Perlu Meta Business Account + WhatsApp Business API</td></tr>
+    <tr><td>Kelebihan</td><td>Paling stabil, official, cocok skala besar</td></tr>
+  </table>
+</div>
+
+<!-- ==================== BAB 10 ==================== -->
+<div class="container">
+  <h2>10. Pengaturan (Settings)</h2>
+  <p>Akses di <code>/dashboard/settings</code>. Terdapat 5 tab:</p>
+
+  <h3>10.1 Profil</h3>
+  <p>Edit informasi akun Anda:</p>
+  <ul>
+    <li>Nama lengkap</li>
+    <li>Email (tidak bisa diubah)</li>
+    <li>Timezone (WIB/WITA/WIT/UTC)</li>
+    <li>Bahasa (Indonesia/English)</li>
+  </ul>
+
+  <h3>10.2 Langganan & Paket</h3>
+  <p>Tab <strong>💎 Langganan</strong> menampilkan informasi paket Anda saat ini beserta batas kuota.</p>
+
+  <h4>Paket yang Tersedia:</h4>
+  <table>
+    <tr><th>Paket</th><th>Harga</th><th>Device</th><th>Broadcast/bln</th><th>Kontak</th><th>Tim</th></tr>
+    <tr><td><strong>Free</strong></td><td>Gratis</td><td>1</td><td>5</td><td>500</td><td>1</td></tr>
+    <tr><td><strong>Starter</strong></td><td>Rp 99.000/bln</td><td>3</td><td>50</td><td>5.000</td><td>3</td></tr>
+    <tr><td><strong>Pro</strong> ⭐</td><td>Rp 299.000/bln</td><td>10</td><td>Unlimited</td><td>50.000</td><td>10</td></tr>
+    <tr><td><strong>Enterprise</strong></td><td>Custom</td><td>Unlimited</td><td>Unlimited</td><td>Unlimited</td><td>Unlimited</td></tr>
+  </table>
+
+  <h4>Cara Upgrade:</h4>
+  <p>Klik tombol <strong>"Upgrade"</strong> pada paket yang diinginkan → Modal kontak akan muncul dengan opsi:</p>
+  <ul>
+    <li>💬 <strong>Chat WhatsApp</strong> — Langsung chat dengan owner platform</li>
+    <li>📧 <strong>Email</strong> — Kirim email permintaan upgrade</li>
+    <li>📞 <strong>Telepon</strong> — Hubungi langsung</li>
+  </ul>
+
+  <h3>10.3 Team</h3>
+  <p>Kelola anggota tim. Tambah agen CS dengan nama, email, dan role (Agent/Supervisor/Admin). Anda bisa mengaktifkan/menonaktifkan atau menghapus agen.</p>
+
+  <h3>10.4 Webhook</h3>
+  <p>Konfigurasi webhook URL untuk integrasi:</p>
+  <ul>
+    <li><strong>WAHA Webhook URL</strong> — Daftarkan di WAHA untuk menerima pesan masuk.</li>
+    <li><strong>Meta Official Webhook URL</strong> — Daftarkan di Meta Developer Console.</li>
+  </ul>
+
+  <h3>10.5 Notifikasi</h3>
+  <p>Atur preferensi notifikasi yang tersimpan ke database:</p>
+  <table>
+    <tr><th>Notifikasi</th><th>Deskripsi</th></tr>
+    <tr><td>💬 Pesan masuk baru</td><td>Notifikasi saat ada pesan WA masuk</td></tr>
+    <tr><td>✅ Campaign selesai</td><td>Notifikasi saat broadcast selesai berjalan</td></tr>
+    <tr><td>🔌 Device terputus</td><td>Notifikasi saat device WA kehilangan koneksi</td></tr>
+  </table>
+  <p>Klik toggle on/off → klik <strong>"Simpan Preferensi"</strong>.</p>
+</div>
+
+<!-- ==================== BAB 11 ==================== -->
+<div class="container">
+  <h2>11. Admin Panel (Owner Only)</h2>
+  <p>Admin Panel hanya bisa diakses oleh user dengan role <strong>owner</strong>. Akses melalui sidebar: <strong>"Admin Panel 👑"</strong> atau langsung ke <code>/admin</code>.</p>
+
+  <div class="warning-box">
+    <strong>⚠️ Akses Terbatas:</strong> Hanya user dengan role <code>owner</code> yang bisa mengakses Admin Panel. User lain akan melihat halaman "Akses Ditolak".
+  </div>
+
+  <h3>11.1 Dashboard Admin</h3>
+  <p>Halaman <code>/admin</code> menampilkan:</p>
+  <ul>
+    <li><strong>Total Pelanggan</strong> — Jumlah tenant yang terdaftar.</li>
+    <li><strong>Total Device</strong> — Jumlah device + berapa yang connected.</li>
+    <li><strong>Total Broadcast</strong> — Jumlah campaign yang sudah dibuat.</li>
+    <li><strong>Total Kontak</strong> — Jumlah kontak di seluruh platform.</li>
+    <li><strong>Distribusi Paket</strong> — Berapa pelanggan di setiap tier (free/starter/pro/enterprise).</li>
+  </ul>
+
+  <h3>11.2 Kelola Pelanggan</h3>
+  <p>Halaman <code>/admin/tenants</code> menampilkan tabel semua pelanggan platform:</p>
+  <table>
+    <tr><th>Kolom</th><th>Keterangan</th></tr>
+    <tr><td>Tenant</td><td>Nama tenant + ID</td></tr>
+    <tr><td>Owner</td><td>Nama pemilik tenant</td></tr>
+    <tr><td>Device</td><td>Jumlah device terhubung</td></tr>
+    <tr><td>Paket</td><td>Dropdown untuk mengubah paket langsung</td></tr>
+    <tr><td>Terdaftar</td><td>Tanggal pendaftaran</td></tr>
+  </table>
+
+  <h4>Mengubah Paket Pelanggan:</h4>
+  <p>Klik dropdown di kolom "Paket" → pilih paket baru (free/starter/pro/enterprise) → perubahan langsung tersimpan (tanda ✅ muncul).</p>
+
+  <h3>11.3 Profil Owner & Platform</h3>
+  <p>Halaman <code>/admin/settings</code> untuk mengatur informasi platform dan kontak owner.</p>
+
+  <h4>Informasi Platform</h4>
+  <ul>
+    <li><strong>Nama Platform</strong> — Nama yang ditampilkan (default: "GAS Broadcast").</li>
+    <li><strong>Logo URL</strong> — URL logo platform.</li>
+  </ul>
+
+  <h4>Profil Owner</h4>
+  <ul>
+    <li><strong>Nama Owner</strong> — Nama pemilik platform.</li>
+    <li><strong>Email</strong> — Email kontak.</li>
+    <li><strong>Nomor Telepon</strong> — Nomor telepon.</li>
+    <li><strong>Nomor WhatsApp</strong> — Format internasional (628xxx). Ditampilkan ke pelanggan saat klik "Upgrade".</li>
+  </ul>
+
+  <h4>Pesan Upgrade</h4>
+  <p>Pesan kustom yang ditampilkan saat pelanggan klik tombol "Upgrade" di halaman langganan mereka.</p>
+
+  <div class="success-box">
+    <strong>Preview:</strong> Di bagian bawah halaman, Anda bisa melihat <em>preview</em> bagaimana kontak Anda akan tampil ke pelanggan.
+  </div>
+</div>
+
+<!-- ==================== BAB 12 ==================== -->
+<div class="container">
+  <h2>12. API Keys</h2>
+  <p>Halaman <code>/dashboard/api-keys</code> menampilkan API Key untuk integrasi dengan sistem eksternal.</p>
+  <ul>
+    <li><strong>Salin API Key</strong> — Klik tombol copy untuk menyalin.</li>
+    <li><strong>Regenerate</strong> — Generate ulang API Key jika diperlukan.</li>
+  </ul>
+
+  <div class="danger-box">
+    <strong>🔒 Keamanan:</strong> Jangan pernah membagikan API Key Anda ke pihak yang tidak dipercaya. API Key memberikan akses penuh ke akun Anda.
+  </div>
+</div>
+
+<!-- ==================== BAB 13 ==================== -->
+<div class="container">
+  <h2>13. Troubleshooting</h2>
+
+  <h3>QR Code tidak muncul</h3>
+  <table>
+    <tr><th>Kemungkinan Penyebab</th><th>Solusi</th></tr>
+    <tr><td>Bridge service tidak berjalan</td><td>Cek apakah bridge service di Railway aktif (status: running)</td></tr>
+    <tr><td>Bridge URL salah</td><td>Pastikan URL sama persis dengan URL di Railway</td></tr>
+    <tr><td>API Secret salah</td><td>Pastikan API Secret sama dengan yang di-set di environment bridge</td></tr>
+  </table>
+
+  <h3>Broadcast gagal / pesan tidak terkirim</h3>
+  <table>
+    <tr><th>Kemungkinan Penyebab</th><th>Solusi</th></tr>
+    <tr><td>Device disconnect</td><td>Cek halaman Devices, pastikan status "Connected"</td></tr>
+    <tr><td>Nomor tidak valid</td><td>Pastikan nomor format 628xxx (tanpa + atau 0)</td></tr>
+    <tr><td>Delay terlalu rendah</td><td>Naikkan delay minimum ke 5+ detik</td></tr>
+    <tr><td>WhatsApp memblokir</td><td>Nomor WA mungkin dibatasi, ganti nomor atau tunggu 24 jam</td></tr>
+  </table>
+
+  <h3>Data platform settings tidak tersimpan</h3>
+  <table>
+    <tr><th>Kemungkinan Penyebab</th><th>Solusi</th></tr>
+    <tr><td>Migration belum dijalankan</td><td>Jalankan <code>008_platform_settings.sql</code> di Supabase SQL Editor</td></tr>
+    <tr><td>RLS policy INSERT belum ada</td><td>Tambahkan policy INSERT untuk owner</td></tr>
+    <tr><td>User bukan owner</td><td>Hanya user dengan role "owner" yang bisa update platform settings</td></tr>
+  </table>
+
+  <h3>Halaman admin menunjukkan "Akses Ditolak"</h3>
+  <p>Pastikan user yang login memiliki role <code>owner</code> di tabel <code>profiles</code>. Cek via Supabase Dashboard → tabel profiles.</p>
+</div>
+
+<!-- ==================== BAB 14 ==================== -->
+<div class="container">
+  <h2>14. FAQ (Frequently Asked Questions)</h2>
+
+  <h4>Q: Berapa banyak pesan yang bisa dikirim per hari?</h4>
+  <p><strong>A:</strong> Tergantung paket dan delay yang diset. Dengan delay 5 detik, ~720 pesan/jam. Namun WhatsApp memiliki limit bawaannya, direkomendasikan max 500-1000 pesan per nomor per hari.</p>
+
+  <h4>Q: Apakah aman dari blokir WhatsApp?</h4>
+  <p><strong>A:</strong> GAS Broadcast menggunakan delay acak antar pesan untuk meminimalkan risiko. Namun, risiko blokir tetap ada jika mengirim terlalu banyak pesan. Gunakan nomor WA Business dan delay minimal 5 detik.</p>
+
+  <h4>Q: Bisa pakai berapa nomor WA sekaligus?</h4>
+  <p><strong>A:</strong> Sesuai paket — Free: 1 device, Starter: 3, Pro: 10, Enterprise: unlimited.</p>
+
+  <h4>Q: Apakah kontak di duplikat jika import CSV berkali-kali?</h4>
+  <p><strong>A:</strong> Sistem memeriksa nomor telepon sebagai unique identifier. Kontak dengan nomor yang sama tidak akan diduplikat.</p>
+
+  <h4>Q: Bagaimana cara upgrade paket?</h4>
+  <p><strong>A:</strong> Buka Settings → tab Langganan → klik "Upgrade" pada paket yang diinginkan → hubungi owner platform via WhatsApp atau email yang ditampilkan.</p>
+
+  <h4>Q: Bisakah beberapa orang mengakses dashboard yang sama?</h4>
+  <p><strong>A:</strong> Ya, melalui fitur Team. Owner bisa menambah agen dengan role Agent/Supervisor/Admin di Settings → tab Team.</p>
+
+  <h4>Q: Apakah data saya aman?</h4>
+  <p><strong>A:</strong> Ya. Data disimpan di Supabase (PostgreSQL) dengan Row Level Security (RLS). Setiap tenant hanya bisa mengakses data miliknya sendiri.</p>
+</div>
+
+<!-- ==================== FOOTER ==================== -->
+<div class="footer-doc">
+  <strong>GAS Smart Broadcast — Manual Book v1.0</strong><br>
+  Dokumen ini di-generate pada Maret 2026.<br>
+  Untuk bantuan teknis, hubungi tim kami melalui Admin Panel → Profil Owner & Platform.
+</div>
+
+<!-- Print Button (non-print) -->
+<div style="text-align: center; padding: 40px;" class="no-print">
+  <button onclick="window.print()" style="padding: 14px 40px; background: #6C63FF; color: white; border: none; border-radius: 8px; font-size: 14pt; cursor: pointer; font-family: Inter, sans-serif; font-weight: 600;">
+    🖨️ Print / Save as PDF
+  </button>
+  <p style="margin-top: 12px; color: #999; font-size: 10pt;">Klik tombol di atas, atau tekan Ctrl+P, lalu pilih "Save as PDF" sebagai printer destination.</p>
+</div>
+
+</body>
+</html>
