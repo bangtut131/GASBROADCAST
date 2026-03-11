@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
     ArrowLeft, Send, Clock, Users, Smartphone, FileText,
     Image, Video, ChevronDown, Plus, X, Loader2, AlertCircle,
-    CheckCircle, Info
+    CheckCircle, Info, Upload, Download, Sparkles, Search
 } from 'lucide-react';
 
 interface Device {
@@ -21,8 +21,17 @@ interface ContactGroup {
     member_count?: number;
 }
 
-type TargetType = 'group' | 'manual';
+interface ContactItem {
+    id: string;
+    name: string | null;
+    phone: string;
+    tags: string[];
+}
+
+type TargetType = 'group' | 'manual' | 'contacts' | 'csv';
 type MediaType = 'none' | 'image' | 'video' | 'document';
+
+const DEFAULT_GREETINGS = ['Halo', 'Hi', 'Assalamualaikum', 'Selamat pagi', 'Hello', 'Hai'];
 
 export default function CreateBroadcastPage() {
     const router = useRouter();
@@ -36,7 +45,7 @@ export default function CreateBroadcastPage() {
     const [name, setName] = useState('');
     const [selectedDevice, setSelectedDevice] = useState('');
     const [messageTemplate, setMessageTemplate] = useState('');
-    const [targetType, setTargetType] = useState<TargetType>('group');
+    const [targetType, setTargetType] = useState<TargetType>('contacts');
     const [selectedGroup, setSelectedGroup] = useState('');
     const [manualPhones, setManualPhones] = useState('');
     const [mediaType, setMediaType] = useState<MediaType>('none');
@@ -46,10 +55,31 @@ export default function CreateBroadcastPage() {
     const [scheduledAt, setScheduledAt] = useState('');
     const [sendNow, setSendNow] = useState(true);
 
+    // Contacts target
+    const [allContacts, setAllContacts] = useState<ContactItem[]>([]);
+    const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
+    const [contactSearch, setContactSearch] = useState('');
+    const [contactTagFilter, setContactTagFilter] = useState('');
+    const [loadingContacts, setLoadingContacts] = useState(false);
+
+    // CSV target
+    const csvInputRef = useRef<HTMLInputElement>(null);
+    const [csvPhones, setCsvPhones] = useState<{ phone: string; name?: string }[]>([]);
+    const [csvFileName, setCsvFileName] = useState('');
+
+    // Random greeting
+    const [useGreeting, setUseGreeting] = useState(false);
+    const [greetings, setGreetings] = useState<string[]>([...DEFAULT_GREETINGS]);
+    const [newGreeting, setNewGreeting] = useState('');
+
     useEffect(() => {
         loadDevices();
         loadGroups();
     }, []);
+
+    useEffect(() => {
+        if (targetType === 'contacts' && allContacts.length === 0) loadContacts();
+    }, [targetType]);
 
     const loadDevices = async () => {
         try {
@@ -69,9 +99,111 @@ export default function CreateBroadcastPage() {
         } catch { }
     };
 
+    const loadContacts = async () => {
+        setLoadingContacts(true);
+        try {
+            const res = await fetch('/api/contacts?limit=2000');
+            const data = await res.json();
+            if (data.success) setAllContacts(data.data || []);
+        } catch { }
+        finally { setLoadingContacts(false); }
+    };
+
     const charCount = messageTemplate.length;
     const variables = Array.from(messageTemplate.matchAll(/\{(\w+)\}/g)).map(m => m[1]);
     const uniqueVars = [...new Set(variables)];
+
+    // Get filtered contacts
+    const filteredContacts = allContacts.filter(c => {
+        const matchSearch = !contactSearch ||
+            (c.name || '').toLowerCase().includes(contactSearch.toLowerCase()) ||
+            c.phone.includes(contactSearch);
+        const matchTag = !contactTagFilter || (c.tags || []).includes(contactTagFilter);
+        return matchSearch && matchTag;
+    });
+
+    const allTags = [...new Set(allContacts.flatMap(c => c.tags || []))];
+
+    const toggleContact = (phone: string) => {
+        setSelectedContacts(prev => {
+            const next = new Set(prev);
+            if (next.has(phone)) next.delete(phone);
+            else next.add(phone);
+            return next;
+        });
+    };
+
+    const selectAllFiltered = () => {
+        setSelectedContacts(prev => {
+            const next = new Set(prev);
+            filteredContacts.forEach(c => next.add(c.phone));
+            return next;
+        });
+    };
+
+    const deselectAll = () => setSelectedContacts(new Set());
+
+    // CSV parsing
+    const handleCSVUpload = (file: File) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const text = e.target?.result as string;
+            const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+            if (lines.length < 2) { setError('File CSV kosong atau hanya header'); return; }
+
+            const header = lines[0].toLowerCase().split(',').map(h => h.trim().replace(/"/g, ''));
+            const phoneIdx = header.findIndex(h => ['phone', 'nomor', 'telepon', 'no', 'whatsapp', 'wa'].includes(h));
+            const nameIdx = header.findIndex(h => ['name', 'nama'].includes(h));
+
+            if (phoneIdx === -1) { setError('Kolom "phone" tidak ditemukan. Header: ' + header.join(', ')); return; }
+
+            const parsed: { phone: string; name?: string }[] = [];
+            for (let i = 1; i < lines.length; i++) {
+                const cols = lines[i].match(/("([^"]*)"|[^,]*)/g)?.map(c => c.trim().replace(/^"|"$/g, '')) || [];
+                let phone = (cols[phoneIdx] || '').replace(/\D/g, '');
+                if (phone.startsWith('08')) phone = '62' + phone.slice(1);
+                else if (phone.startsWith('0')) phone = '62' + phone.slice(1);
+                if (!phone || phone.length < 10) continue;
+                parsed.push({ phone, name: nameIdx >= 0 ? cols[nameIdx] : undefined });
+            }
+
+            setCsvPhones(parsed);
+            setCsvFileName(file.name);
+            setError('');
+        };
+        reader.readAsText(file);
+    };
+
+    const downloadCSVTemplate = () => {
+        const csv = 'phone,name\n6281234567890,John Doe\n6289876543210,Jane Smith\n08123456789,Budi Pratama';
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'template_broadcast.csv'; a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    const addGreeting = () => {
+        if (newGreeting.trim() && !greetings.includes(newGreeting.trim())) {
+            setGreetings(prev => [...prev, newGreeting.trim()]);
+            setNewGreeting('');
+        }
+    };
+
+    const removeGreeting = (g: string) => setGreetings(prev => prev.filter(x => x !== g));
+
+    // Build target phones from the selected target type
+    const getTargetPhones = (): string[] => {
+        if (targetType === 'manual') return manualPhones.split('\n').map(p => p.trim()).filter(Boolean);
+        if (targetType === 'contacts') return Array.from(selectedContacts);
+        if (targetType === 'csv') return csvPhones.map(c => c.phone);
+        return [];
+    };
+
+    const getTargetCount = (): number => {
+        if (targetType === 'group') return groups.find(g => g.id === selectedGroup)?.member_count || 0;
+        return getTargetPhones().length;
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -80,13 +212,13 @@ export default function CreateBroadcastPage() {
         if (!messageTemplate.trim()) { setError('Template pesan wajib diisi'); return; }
         if (targetType === 'group' && !selectedGroup) { setError('Pilih grup kontak'); return; }
         if (targetType === 'manual' && !manualPhones.trim()) { setError('Masukkan nomor telepon'); return; }
+        if (targetType === 'contacts' && selectedContacts.size === 0) { setError('Pilih minimal 1 kontak'); return; }
+        if (targetType === 'csv' && csvPhones.length === 0) { setError('Upload file CSV terlebih dahulu'); return; }
 
         setSaving(true);
         setError('');
 
-        const phones = targetType === 'manual'
-            ? manualPhones.split('\n').map(p => p.trim()).filter(Boolean)
-            : [];
+        const phones = getTargetPhones();
 
         try {
             const res = await fetch('/api/campaigns', {
@@ -96,7 +228,7 @@ export default function CreateBroadcastPage() {
                     name,
                     device_id: selectedDevice,
                     message_template: messageTemplate,
-                    target_type: targetType,
+                    target_type: targetType === 'contacts' || targetType === 'csv' ? 'manual' : targetType,
                     target_group_id: targetType === 'group' ? selectedGroup : null,
                     target_phones: phones,
                     media_type: mediaType === 'none' ? null : mediaType,
@@ -105,6 +237,7 @@ export default function CreateBroadcastPage() {
                     max_delay: maxDelay,
                     scheduled_at: !sendNow && scheduledAt ? new Date(scheduledAt).toISOString() : null,
                     auto_start: sendNow,
+                    greetings: useGreeting ? greetings : null,
                 }),
             });
 
@@ -119,7 +252,7 @@ export default function CreateBroadcastPage() {
 
             router.push('/dashboard/broadcast');
         } catch (err: any) {
-            setError(err.message);
+            setError(err.message || 'Terjadi kesalahan');
         } finally {
             setSaving(false);
         }
@@ -177,15 +310,76 @@ export default function CreateBroadcastPage() {
                         {/* Target Contacts */}
                         <div className="card">
                             <h3 style={{ fontSize: 'var(--text-md)', marginBottom: 'var(--space-4)' }}>🎯 Target Penerima</h3>
-                            <div className="flex gap-2" style={{ marginBottom: 'var(--space-4)' }}>
-                                <button type="button" className={`btn ${targetType === 'group' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTargetType('group')}>
-                                    <Users size={16} /> Dari Grup
+                            <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-4)', flexWrap: 'wrap' }}>
+                                <button type="button" className={`btn btn-sm ${targetType === 'contacts' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTargetType('contacts')}>
+                                    <Users size={14} /> Dari Kontak
                                 </button>
-                                <button type="button" className={`btn ${targetType === 'manual' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTargetType('manual')}>
-                                    <FileText size={16} /> Input Manual
+                                <button type="button" className={`btn btn-sm ${targetType === 'group' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTargetType('group')}>
+                                    <Users size={14} /> Dari Grup
+                                </button>
+                                <button type="button" className={`btn btn-sm ${targetType === 'csv' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTargetType('csv')}>
+                                    <Upload size={14} /> Upload CSV
+                                </button>
+                                <button type="button" className={`btn btn-sm ${targetType === 'manual' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTargetType('manual')}>
+                                    <FileText size={14} /> Input Manual
                                 </button>
                             </div>
 
+                            {/* Contacts target */}
+                            {targetType === 'contacts' && (
+                                <div>
+                                    {loadingContacts ? (
+                                        <div style={{ textAlign: 'center', padding: 'var(--space-4)', color: 'var(--color-text-muted)' }}>
+                                            <Loader2 size={20} className="animate-spin" style={{ margin: '0 auto 8px' }} /> Memuat kontak...
+                                        </div>
+                                    ) : (
+                                        <>
+                                            {/* Search + tag filter */}
+                                            <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-3)', flexWrap: 'wrap' }}>
+                                                <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
+                                                    <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
+                                                    <input className="form-input" placeholder="Cari nama/nomor..." value={contactSearch} onChange={e => setContactSearch(e.target.value)} style={{ paddingLeft: 32, height: 36, fontSize: 'var(--text-sm)' }} />
+                                                </div>
+                                                <select className="form-select" value={contactTagFilter} onChange={e => setContactTagFilter(e.target.value)} style={{ height: 36, minWidth: 120, fontSize: 'var(--text-sm)' }}>
+                                                    <option value="">Semua Tag</option>
+                                                    {allTags.map(t => <option key={t} value={t}>{t}</option>)}
+                                                </select>
+                                                <button type="button" className="btn btn-secondary btn-sm" onClick={selectAllFiltered}>✓ Pilih Semua</button>
+                                                {selectedContacts.size > 0 && (
+                                                    <button type="button" className="btn btn-ghost btn-sm" onClick={deselectAll} style={{ color: 'var(--color-danger)' }}>Hapus Pilihan</button>
+                                                )}
+                                            </div>
+                                            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-accent)', marginBottom: 'var(--space-2)', fontWeight: 600 }}>
+                                                ✅ {selectedContacts.size} kontak dipilih dari {allContacts.length} total
+                                            </div>
+
+                                            {/* Contact list */}
+                                            <div style={{ maxHeight: 240, overflowY: 'auto', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
+                                                {filteredContacts.length === 0 ? (
+                                                    <div style={{ padding: 'var(--space-4)', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>
+                                                        Tidak ada kontak ditemukan
+                                                    </div>
+                                                ) : filteredContacts.map(c => (
+                                                    <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', padding: 'var(--space-2) var(--space-3)', borderBottom: '1px solid var(--color-border)', cursor: 'pointer', background: selectedContacts.has(c.phone) ? 'var(--color-accent-soft)' : 'transparent', transition: 'background 0.15s' }}>
+                                                        <input type="checkbox" checked={selectedContacts.has(c.phone)} onChange={() => toggleContact(c.phone)} style={{ width: 16, height: 16, accentColor: 'var(--color-accent)' }} />
+                                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                                            <div style={{ fontSize: 'var(--text-sm)', fontWeight: selectedContacts.has(c.phone) ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name || 'Tanpa nama'}</div>
+                                                            <div style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>{c.phone}</div>
+                                                        </div>
+                                                        {c.tags?.length > 0 && (
+                                                            <div style={{ display: 'flex', gap: 2 }}>
+                                                                {c.tags.slice(0, 2).map(t => <span key={t} style={{ fontSize: 9, padding: '1px 5px', borderRadius: 8, background: 'var(--color-bg-tertiary)', color: 'var(--color-text-muted)' }}>{t}</span>)}
+                                                            </div>
+                                                        )}
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Group target */}
                             {targetType === 'group' && (
                                 <div className="form-group">
                                     <label className="form-label">Pilih Grup Kontak *</label>
@@ -201,6 +395,47 @@ export default function CreateBroadcastPage() {
                                 </div>
                             )}
 
+                            {/* CSV target */}
+                            {targetType === 'csv' && (
+                                <div>
+                                    <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
+                                        <button type="button" className="btn btn-ghost btn-sm" onClick={downloadCSVTemplate}>
+                                            <Download size={14} /> Download Template
+                                        </button>
+                                    </div>
+                                    <input ref={csvInputRef} type="file" accept=".csv,text/csv" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) handleCSVUpload(f); }} />
+                                    <div
+                                        onClick={() => csvInputRef.current?.click()}
+                                        style={{
+                                            border: '2px dashed var(--color-border)', borderRadius: 'var(--radius-md)',
+                                            padding: 'var(--space-5)', textAlign: 'center', cursor: 'pointer',
+                                            background: 'var(--color-bg-tertiary)', transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        {csvPhones.length > 0 ? (
+                                            <div>
+                                                <CheckCircle size={24} style={{ color: 'var(--color-success)', margin: '0 auto 8px' }} />
+                                                <p style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-success)' }}>
+                                                    ✅ {csvPhones.length} nomor dari {csvFileName}
+                                                </p>
+                                                <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginTop: 4 }}>Klik untuk ganti file</p>
+                                            </div>
+                                        ) : (
+                                            <div>
+                                                <Upload size={24} style={{ color: 'var(--color-text-muted)', margin: '0 auto 8px' }} />
+                                                <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)' }}>
+                                                    Klik untuk upload file CSV
+                                                </p>
+                                                <p style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 4 }}>
+                                                    Format: kolom "phone" wajib, "name" opsional
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Manual target */}
                             {targetType === 'manual' && (
                                 <div className="form-group">
                                     <label className="form-label">Nomor Telepon (1 per baris) *</label>
@@ -229,16 +464,17 @@ export default function CreateBroadcastPage() {
 
                             <div className="info-box" style={{ marginBottom: 'var(--space-3)' }}>
                                 <Info size={14} style={{ flexShrink: 0, color: 'var(--color-info)' }} />
-                                <span>Gunakan variabel: <code>&#123;name&#125;</code> nama kontak, <code>&#123;phone&#125;</code> nomor HP. Variabel lain bebas ditentukan.</span>
+                                <span>Variabel: <code>&#123;name&#125;</code> nama kontak, <code>&#123;phone&#125;</code> nomor HP{useGreeting && <>, <code>&#123;greeting&#125;</code> sapaan acak</>}. Variabel lain bebas ditentukan.</span>
                             </div>
 
-                            <div className="flex gap-2" style={{ marginBottom: 'var(--space-2)' }}>
-                                {['{name}', '{phone}', '{company}'].map(v => (
+                            <div className="flex gap-2" style={{ marginBottom: 'var(--space-2)', flexWrap: 'wrap' }}>
+                                {['{name}', '{phone}', '{company}', ...(useGreeting ? ['{greeting}'] : [])].map(v => (
                                     <button
                                         key={v}
                                         type="button"
-                                        className="btn btn-secondary btn-sm"
+                                        className={`btn btn-sm ${v === '{greeting}' ? 'btn-accent' : 'btn-secondary'}`}
                                         onClick={() => setMessageTemplate(t => t + v)}
+                                        style={v === '{greeting}' ? { background: 'linear-gradient(135deg, #6C63FF, #EC4899)', color: 'white', border: 'none' } : {}}
                                     >
                                         + {v}
                                     </button>
@@ -247,7 +483,7 @@ export default function CreateBroadcastPage() {
 
                             <textarea
                                 className="form-textarea"
-                                placeholder="Halo {name}, kami menawarkan promo spesial untuk Anda..."
+                                placeholder={useGreeting ? "{greeting} {name}, kami menawarkan promo spesial untuk Anda..." : "Halo {name}, kami menawarkan promo spesial untuk Anda..."}
                                 value={messageTemplate}
                                 onChange={e => setMessageTemplate(e.target.value)}
                                 rows={6}
@@ -258,6 +494,56 @@ export default function CreateBroadcastPage() {
                                     <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>Variabel terdeteksi: </span>
                                     {uniqueVars.map(v => <span key={v} className="badge badge-accent" style={{ marginLeft: 4 }}>{'{' + v + '}'}</span>)}
                                 </div>
+                            )}
+                        </div>
+
+                        {/* Random Greeting */}
+                        <div className="card">
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                                    <Sparkles size={16} style={{ color: 'var(--color-accent)' }} />
+                                    <h3 style={{ fontSize: 'var(--text-md)' }}>Random Greeting</h3>
+                                </div>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', cursor: 'pointer', fontSize: 'var(--text-sm)' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={useGreeting}
+                                        onChange={e => setUseGreeting(e.target.checked)}
+                                        style={{ width: 16, height: 16, accentColor: 'var(--color-accent)' }}
+                                    />
+                                    Aktifkan
+                                </label>
+                            </div>
+
+                            {useGreeting && (
+                                <>
+                                    <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginBottom: 'var(--space-3)' }}>
+                                        Gunakan <code style={{ background: 'var(--color-bg-tertiary)', padding: '1px 5px', borderRadius: 4, color: 'var(--color-accent)' }}>{'{'+'greeting'+'}'}</code> di template pesan. Saat kirim, sapaan akan dipilih acak.
+                                    </p>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
+                                        {greetings.map(g => (
+                                            <span key={g} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 20, background: 'var(--color-accent-soft)', border: '1px solid var(--color-accent)', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-accent)' }}>
+                                                {g}
+                                                <button type="button" onClick={() => removeGreeting(g)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', padding: 0, lineHeight: 1 }}>
+                                                    <X size={12} />
+                                                </button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                                        <input
+                                            className="form-input"
+                                            placeholder="Tambah sapaan baru..."
+                                            value={newGreeting}
+                                            onChange={e => setNewGreeting(e.target.value)}
+                                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addGreeting(); } }}
+                                            style={{ flex: 1, height: 34, fontSize: 'var(--text-sm)' }}
+                                        />
+                                        <button type="button" className="btn btn-secondary btn-sm" onClick={addGreeting} disabled={!newGreeting.trim()}>
+                                            <Plus size={14} /> Tambah
+                                        </button>
+                                    </div>
+                                </>
                             )}
                         </div>
 
@@ -345,9 +631,10 @@ export default function CreateBroadcastPage() {
                                             <Image size={24} />
                                         </div>
                                     )}
-                                    <div style={{ background: '#128c7e', color: 'white', padding: 'var(--space-3)', borderRadius: messageTemplate ? 'var(--radius-md)' : 'var(--radius-md)', fontSize: 'var(--text-sm)', lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                    <div style={{ background: '#128c7e', color: 'white', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-sm)', lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                                         {messageTemplate
                                             ? messageTemplate
+                                                .replace(/{greeting}/gi, useGreeting && greetings.length > 0 ? greetings[Math.floor(Math.random() * greetings.length)] : 'Halo')
                                                 .replace(/{name}/gi, 'Budi Santoso')
                                                 .replace(/{phone}/gi, '628123456789')
                                             : <span style={{ opacity: 0.6, fontStyle: 'italic' }}>Preview pesan akan tampil di sini...</span>
@@ -370,11 +657,20 @@ export default function CreateBroadcastPage() {
                                 </div>
                                 <div className="flex justify-between">
                                     <span style={{ color: 'var(--color-text-muted)' }}>Target:</span>
-                                    <span>{targetType === 'group' ? (groups.find(g => g.id === selectedGroup)?.name || 'Belum dipilih') : `${manualPhones.split('\n').filter(p => p.trim()).length} nomor`}</span>
+                                    <span>
+                                        {targetType === 'contacts' && `${selectedContacts.size} kontak`}
+                                        {targetType === 'group' && (groups.find(g => g.id === selectedGroup)?.name || 'Belum dipilih')}
+                                        {targetType === 'csv' && `${csvPhones.length} nomor (CSV)`}
+                                        {targetType === 'manual' && `${manualPhones.split('\n').filter(p => p.trim()).length} nomor`}
+                                    </span>
                                 </div>
                                 <div className="flex justify-between">
                                     <span style={{ color: 'var(--color-text-muted)' }}>Media:</span>
                                     <span>{mediaType === 'none' ? 'Teks saja' : mediaType}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span style={{ color: 'var(--color-text-muted)' }}>Greeting:</span>
+                                    <span>{useGreeting ? `${greetings.length} sapaan` : 'Mati'}</span>
                                 </div>
                                 <div className="flex justify-between">
                                     <span style={{ color: 'var(--color-text-muted)' }}>Delay:</span>

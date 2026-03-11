@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { Users, Plus, Search, Upload, Tag, Trash2, MoreVertical, X } from 'lucide-react';
+import { Users, Plus, Search, Upload, Tag, Trash2, MoreVertical, X, Download, Loader2, CheckCircle } from 'lucide-react';
 import type { Contact } from '@/types';
 
 export default function ContactsPage() {
@@ -12,6 +12,9 @@ export default function ContactsPage() {
     const [showAddModal, setShowAddModal] = useState(false);
     const [formData, setFormData] = useState({ name: '', phone: '', email: '', tags: '' });
     const [submitting, setSubmitting] = useState(false);
+    const [importing, setImporting] = useState(false);
+    const [importResult, setImportResult] = useState<{total: number; imported: number; invalid: number} | null>(null);
+    const csvInputRef = useRef<HTMLInputElement>(null);
     const supabase = createClient();
 
     useEffect(() => {
@@ -86,6 +89,66 @@ export default function ContactsPage() {
         c.phone.includes(searchQuery)
     );
 
+    const downloadCSVTemplate = () => {
+        const csv = 'phone,name,email,tags\n6281234567890,John Doe,john@example.com,"VIP,Customer"\n6289876543210,Jane Smith,,"Lead"';
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'template_contacts.csv'; a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    const handleCSVImport = async (file: File) => {
+        setImporting(true); setImportResult(null);
+        try {
+            const text = await file.text();
+            const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+            if (lines.length < 2) throw new Error('File CSV kosong atau hanya header');
+
+            // Parse header
+            const header = lines[0].toLowerCase().split(',').map(h => h.trim().replace(/"/g, ''));
+            const phoneIdx = header.findIndex(h => ['phone', 'nomor', 'telepon', 'no', 'whatsapp', 'wa'].includes(h));
+            const nameIdx = header.findIndex(h => ['name', 'nama'].includes(h));
+            const emailIdx = header.findIndex(h => ['email', 'e-mail'].includes(h));
+            const tagsIdx = header.findIndex(h => ['tags', 'tag', 'label'].includes(h));
+
+            if (phoneIdx === -1) throw new Error('Kolom "phone" tidak ditemukan di CSV. Header: ' + header.join(', '));
+
+            // Parse rows
+            const contacts = [];
+            for (let i = 1; i < lines.length; i++) {
+                // Simple CSV parse (handles quoted fields)
+                const cols = lines[i].match(/("[^"]*"|[^,]*)/g)?.map(c => c.trim().replace(/^"|"$/g, '')) || [];
+                const phone = cols[phoneIdx]?.trim();
+                if (!phone) continue;
+                contacts.push({
+                    phone,
+                    name: nameIdx >= 0 ? cols[nameIdx]?.trim() || undefined : undefined,
+                    email: emailIdx >= 0 ? cols[emailIdx]?.trim() || undefined : undefined,
+                    tags: tagsIdx >= 0 && cols[tagsIdx] ? cols[tagsIdx].split(',').map((t: string) => t.trim()).filter(Boolean) : [],
+                });
+            }
+
+            if (contacts.length === 0) throw new Error('Tidak ada data valid dalam CSV');
+
+            const res = await fetch('/api/contacts/import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contacts }),
+            });
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error);
+
+            setImportResult(data.data);
+            loadContacts();
+        } catch (err: any) {
+            alert('Import gagal: ' + err.message);
+        } finally {
+            setImporting(false);
+            if (csvInputRef.current) csvInputRef.current.value = '';
+        }
+    };
+
     return (
         <div>
             <div className="page-header">
@@ -94,8 +157,12 @@ export default function ContactsPage() {
                     <p className="page-description">Kelola daftar kontak untuk broadcast</p>
                 </div>
                 <div className="page-actions">
-                    <button className="btn btn-secondary">
-                        <Upload size={16} /> Import CSV
+                    <button className="btn btn-ghost btn-sm" onClick={downloadCSVTemplate} title="Download template CSV">
+                        <Download size={16} /> Template
+                    </button>
+                    <input ref={csvInputRef} type="file" accept=".csv,text/csv" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) handleCSVImport(f); }} />
+                    <button className="btn btn-secondary" onClick={() => csvInputRef.current?.click()} disabled={importing}>
+                        {importing ? <><Loader2 size={16} className="animate-spin" /> Mengimport...</> : <><Upload size={16} /> Import CSV</>}
                     </button>
                     <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
                         <Plus size={16} /> Tambah Kontak
@@ -133,7 +200,7 @@ export default function ContactsPage() {
                             Tambahkan kontak satu per satu atau import dari file CSV.
                         </p>
                         <div className="flex gap-3">
-                            <button className="btn btn-secondary">
+                            <button className="btn btn-secondary" onClick={() => csvInputRef.current?.click()} disabled={importing}>
                                 <Upload size={16} /> Import CSV
                             </button>
                             <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>

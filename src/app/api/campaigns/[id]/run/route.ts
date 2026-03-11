@@ -50,9 +50,17 @@ export async function POST(
             for (let i = 0; i < pendingMessages.length; i++) {
                 const msg = pendingMessages[i];
                 const contact = msg.contact;
+
+                // Pick random greeting for each message
+                const greetingList: string[] = campaign.greetings || [];
+                const randomGreeting = greetingList.length > 0
+                    ? greetingList[Math.floor(Math.random() * greetingList.length)]
+                    : '';
+
                 const personalized = personalizeMessage(campaign.message_template, {
                     name: contact?.name || '',
                     phone: msg.phone,
+                    greeting: randomGreeting,
                     ...((contact?.metadata as object) || {}),
                 });
 

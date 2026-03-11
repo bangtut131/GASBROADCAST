@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
         const {
             name, device_id, message_template, target_type, target_group_id,
             target_phones, media_type, media_url, min_delay, max_delay,
-            scheduled_at, auto_start,
+            scheduled_at, auto_start, greetings,
         } = body;
 
         // Count recipients
@@ -70,6 +70,7 @@ export async function POST(request: NextRequest) {
                 scheduled_at: scheduled_at || null,
                 status: scheduled_at ? 'scheduled' : auto_start ? 'running' : 'draft',
                 total_recipients,
+                greetings: greetings || null,
                 created_by: user.id,
             })
             .select()
