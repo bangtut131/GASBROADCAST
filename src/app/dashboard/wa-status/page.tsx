@@ -12,7 +12,7 @@ import {
 interface Category { id: string; name: string; color: string; icon: string; content_count: number }
 interface Content { id: string; type: 'image' | 'video' | 'text'; title: string | null; content_url: string | null; caption: string | null; category_id: string | null; category?: Category; tags: string[]; use_count: number; last_used_at: string | null; created_at: string }
 interface Device { id: string; name: string; phone_number: string | null; status: string }
-interface Schedule { id: string; name: string; device_id: string; device?: Device; mode: string; times_of_day: string[]; days_of_week: number[]; category_ids: string[]; window_start: string; window_end: string; cooldown_days: number; caption_template: string | null; is_active: boolean; last_posted_at: string | null; total_posted: number }
+interface Schedule { id: string; name: string; device_id: string; device?: Device; device_ids?: string[]; mode: string; times_of_day: string[]; days_of_week: number[]; category_ids: string[]; window_start: string; window_end: string; cooldown_days: number; caption_template: string | null; is_active: boolean; last_posted_at: string | null; total_posted: number }
 interface Log { id: string; content_id: string; schedule_id: string; device?: Device; status: string; error_message: string | null; posted_at: string }
 
 type ActiveTab = 'library' | 'schedules' | 'history';
@@ -47,7 +47,7 @@ export default function WAStatusPage() {
     const [dragOver, setDragOver] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [schedForm, setSchedForm] = useState({
-        name: '', device_id: '', mode: 'random',
+        name: '', device_ids: [] as string[], mode: 'random',
         category_ids: [] as string[],
         times_of_day: ['08:00', '12:00', '18:00'],
         days_of_week: [0, 1, 2, 3, 4, 5, 6],
@@ -156,12 +156,15 @@ export default function WAStatusPage() {
     };
 
     const handleAddSchedule = async () => {
+        if (schedForm.device_ids.length === 0) { setError('Pilih minimal 1 perangkat'); return; }
         setSaving(true); setError('');
         try {
             const res = await fetch('/api/wa-status/schedules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(schedForm) });
             const data = await res.json();
             if (!data.success) throw new Error(data.error);
-            setSchedules(prev => [data.data, ...prev]);
+            // API returns array when multiple devices selected
+            const newSchedules = Array.isArray(data.data) ? data.data : [data.data];
+            setSchedules(prev => [...newSchedules, ...prev]);
             setShowAddSchedule(false);
         } catch (e: any) { setError(e.message); }
         finally { setSaving(false); }
@@ -197,7 +200,7 @@ export default function WAStatusPage() {
     const duplicateSchedule = (s: Schedule) => {
         setSchedForm({
             name: `${s.name} (copy)`,
-            device_id: '',  // Force user to pick a device
+            device_ids: [],  // Force user to pick devices
             mode: s.mode,
             category_ids: [...s.category_ids],
             times_of_day: [...s.times_of_day],
@@ -208,6 +211,13 @@ export default function WAStatusPage() {
             caption_template: s.caption_template || '',
         });
         setShowAddSchedule(true);
+    };
+
+    const toggleDevice = (id: string) => {
+        setSchedForm(f => ({
+            ...f,
+            device_ids: f.device_ids.includes(id) ? f.device_ids.filter(d => d !== id) : [...f.device_ids, id],
+        }));
     };
 
     const toggleDay = (day: number) => {
@@ -618,17 +628,26 @@ export default function WAStatusPage() {
 
                         <div style={{ display: 'grid', gap: 'var(--space-4)' }}>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-                                <div className="form-group">
+                                <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                                     <label className="form-label">Nama Jadwal *</label>
                                     <input className="form-input" placeholder="Jadwal Pagi, Promo Harian, dll" value={schedForm.name} onChange={e => setSchedForm(f => ({ ...f, name: e.target.value }))} />
                                 </div>
                                 <div className="form-group">
-                                    <label className="form-label">Perangkat WA *</label>
-                                    <select className="form-select" value={schedForm.device_id} onChange={e => setSchedForm(f => ({ ...f, device_id: e.target.value }))}>
-                                        <option value="">— Pilih Device —</option>
-                                        {devices.map(d => <option key={d.id} value={d.id}>{d.name} {d.phone_number ? `(${d.phone_number})` : ''}</option>)}
-                                    </select>
-                                    {devices.length === 0 && <span className="form-hint" style={{ color: 'var(--color-warning)' }}>Tidak ada device terkoneksi</span>}
+                                    <label className="form-label">Perangkat WA * <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 400 }}>(bisa pilih lebih dari 1)</span></label>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                                        {devices.length === 0 ? (
+                                            <span className="form-hint" style={{ color: 'var(--color-warning)' }}>Tidak ada device terkoneksi</span>
+                                        ) : devices.map(d => (
+                                            <label key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', padding: 'var(--space-2) var(--space-3)', border: `2px solid ${schedForm.device_ids.includes(d.id) ? 'var(--color-accent)' : 'var(--color-border)'}`, borderRadius: 'var(--radius-md)', cursor: 'pointer', background: schedForm.device_ids.includes(d.id) ? 'var(--color-accent-soft)' : 'transparent', transition: 'all 0.15s' }}>
+                                                <input type="checkbox" checked={schedForm.device_ids.includes(d.id)} onChange={() => toggleDevice(d.id)} style={{ width: 16, height: 16, accentColor: 'var(--color-accent)' }} />
+                                                <span style={{ fontSize: 'var(--text-sm)', fontWeight: schedForm.device_ids.includes(d.id) ? 600 : 400 }}>📱 {d.name}</span>
+                                                {d.phone_number && <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>({d.phone_number})</span>}
+                                            </label>
+                                        ))}
+                                    </div>
+                                    {schedForm.device_ids.length > 1 && (
+                                        <span className="form-hint" style={{ color: 'var(--color-accent)' }}>✨ {schedForm.device_ids.length} perangkat dipilih — jadwal terpisah akan dibuat untuk setiap perangkat</span>
+                                    )}
                                 </div>
                             </div>
 
