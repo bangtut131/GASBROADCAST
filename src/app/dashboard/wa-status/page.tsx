@@ -12,7 +12,7 @@ import {
 interface Category { id: string; name: string; color: string; icon: string; content_count: number }
 interface Content { id: string; type: 'image' | 'video' | 'text'; title: string | null; content_url: string | null; caption: string | null; category_id: string | null; category?: Category; tags: string[]; use_count: number; last_used_at: string | null; created_at: string }
 interface Device { id: string; name: string; phone_number: string | null; status: string }
-interface Schedule { id: string; name: string; device_id: string; device?: Device; device_ids?: string[]; mode: string; times_of_day: string[]; days_of_week: number[]; category_ids: string[]; window_start: string; window_end: string; cooldown_days: number; caption_template: string | null; is_active: boolean; last_posted_at: string | null; total_posted: number }
+interface Schedule { id: string; name: string; device_id: string; device?: Device; device_ids?: string[]; devices?: Device[]; mode: string; times_of_day: string[]; days_of_week: number[]; category_ids: string[]; window_start: string; window_end: string; cooldown_days: number; caption_template: string | null; is_active: boolean; last_posted_at: string | null; total_posted: number }
 interface Log { id: string; content_id: string; schedule_id: string; device?: Device; status: string; error_message: string | null; posted_at: string }
 
 type ActiveTab = 'library' | 'schedules' | 'history';
@@ -162,9 +162,7 @@ export default function WAStatusPage() {
             const res = await fetch('/api/wa-status/schedules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(schedForm) });
             const data = await res.json();
             if (!data.success) throw new Error(data.error);
-            // API returns array when multiple devices selected
-            const newSchedules = Array.isArray(data.data) ? data.data : [data.data];
-            setSchedules(prev => [...newSchedules, ...prev]);
+            setSchedules(prev => [data.data, ...prev]);
             setShowAddSchedule(false);
         } catch (e: any) { setError(e.message); }
         finally { setSaving(false); }
@@ -375,9 +373,17 @@ export default function WAStatusPage() {
                                                 <span className={`badge ${s.is_active ? 'badge-success' : 'badge-default'}`}>{s.is_active ? 'Aktif' : 'Nonaktif'}</span>
                                             </div>
 
-                                            {/* Device */}
-                                            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)', marginBottom: 'var(--space-2)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                                                📱 {s.device?.name || 'Device'} {s.device?.phone_number ? `(${s.device.phone_number})` : ''}
+                                            {/* Devices */}
+                                            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)', marginBottom: 'var(--space-2)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                                📱
+                                                {(s.devices && s.devices.length > 0) ? s.devices.map((d: Device) => (
+                                                    <span key={d.id} style={{ padding: '1px 8px', borderRadius: 20, background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)', fontSize: 'var(--text-xs)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: d.status === 'connected' ? 'var(--color-success)' : 'var(--color-text-muted)' }} />
+                                                        {d.name} {d.phone_number ? `(${d.phone_number})` : ''}
+                                                    </span>
+                                                )) : (
+                                                    <span>{s.device?.name || 'Device'} {s.device?.phone_number ? `(${s.device.phone_number})` : ''}</span>
+                                                )}
                                             </div>
 
                                             {/* Times */}
@@ -404,7 +410,7 @@ export default function WAStatusPage() {
                                         </div>
 
                                         <div style={{ display: 'flex', gap: 'var(--space-2)', flexShrink: 0, flexDirection: 'column' }}>
-                                            <button className="btn btn-primary btn-sm" onClick={() => postNow(s.id)} disabled={posting === s.id || !s.device || s.device?.status !== 'connected'} title="Post sekarang">
+                                            <button className="btn btn-primary btn-sm" onClick={() => postNow(s.id)} disabled={posting === s.id || !(s.devices?.some(d => d.status === 'connected') || s.device?.status === 'connected')} title="Post sekarang">
                                                 {posting === s.id ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />} Post Sekarang
                                             </button>
                                             <button className={`btn btn-sm ${s.is_active ? 'btn-secondary' : 'btn-ghost'}`} onClick={() => toggleSchedule(s.id, s.is_active)}>
