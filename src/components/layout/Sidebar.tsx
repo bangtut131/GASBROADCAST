@@ -20,6 +20,7 @@ import {
   Radio,
   Sparkles,
   Crown,
+  MapPin,
 } from 'lucide-react';
 import s from './Sidebar.module.css';
 
@@ -45,6 +46,7 @@ const navSections = [
     items: [
       { label: 'Devices', href: '/dashboard/devices', icon: <Smartphone size={20} /> },
       { label: 'Contacts', href: '/dashboard/contacts', icon: <Users size={20} /> },
+      { label: 'Leads Scraper', href: '/dashboard/leads', icon: <MapPin size={20} />, badge: 'New' },
       { label: 'Multi-CS', href: '/dashboard/cs', icon: <UserCheck size={20} /> },
     ],
   },
