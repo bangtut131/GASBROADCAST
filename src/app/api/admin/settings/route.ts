@@ -37,13 +37,33 @@ export async function PATCH(request: NextRequest) {
         }
 
         const updates: Record<string, string> = await request.json();
+        const errors: string[] = [];
 
         for (const [key, value] of Object.entries(updates)) {
-            await supabase
+            // Try update first (rows should already exist from seed)
+            const { data: updated, error: updateErr } = await supabase
                 .from('platform_settings')
-                .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+                .update({ value, updated_at: new Date().toISOString() })
+                .eq('key', key)
+                .select();
+
+            if (updateErr) {
+                errors.push(`${key}: ${updateErr.message}`);
+                continue;
+            }
+
+            // If no row was updated (key doesn't exist), insert it
+            if (!updated || updated.length === 0) {
+                const { error: insertErr } = await supabase
+                    .from('platform_settings')
+                    .insert({ key, value, updated_at: new Date().toISOString() });
+                if (insertErr) errors.push(`${key}: ${insertErr.message}`);
+            }
         }
 
+        if (errors.length > 0) {
+            return NextResponse.json({ success: false, error: errors.join('; ') }, { status: 500 });
+        }
         return NextResponse.json({ success: true });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });

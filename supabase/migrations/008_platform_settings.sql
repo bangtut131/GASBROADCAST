@@ -22,3 +22,6 @@ CREATE POLICY "Public read platform_settings" ON platform_settings FOR SELECT US
 CREATE POLICY "Owner update platform_settings" ON platform_settings FOR UPDATE USING (
   EXISTS (SELECT 1 FROM profiles WHERE profiles.id = auth.uid() AND profiles.role = 'owner')
 );
+CREATE POLICY "Owner insert platform_settings" ON platform_settings FOR INSERT WITH CHECK (
+  EXISTS (SELECT 1 FROM profiles WHERE profiles.id = auth.uid() AND profiles.role = 'owner')
+);
