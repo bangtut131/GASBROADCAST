@@ -63,9 +63,9 @@ export default function Header({ profile, tenant }: HeaderProps) {
             {/* Right — Actions */}
             <div className="topbar-actions">
                 {/* Plan badge */}
-                <span className="badge badge-accent" style={{ textTransform: 'capitalize' }}>
+                <a href="/dashboard/settings" className="badge badge-accent" style={{ textTransform: 'capitalize', textDecoration: 'none', cursor: 'pointer' }}>
                     {tenant?.plan || 'free'} plan
-                </span>
+                </a>
 
                 {/* Notifications */}
                 <button className="btn btn-ghost btn-icon btn-sm" title="Notifikasi">

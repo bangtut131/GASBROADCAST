@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import {
     User, Bell, Globe, Shield, Key, ExternalLink,
     Save, Loader2, CheckCircle, Copy, AlertCircle,
-    Users, Plus, Trash2, Power, X
+    Users, Plus, Trash2, Power, X, CreditCard, Sparkles,
+    Zap, Crown, Check
 } from 'lucide-react';
 
 interface Profile {
@@ -14,6 +15,13 @@ interface Profile {
     role: string;
     timezone: string | null;
     language: string | null;
+    tenant?: {
+        id: string;
+        name: string;
+        plan: string;
+        settings: Record<string, any>;
+        webhook_token: string;
+    };
 }
 
 interface TeamMember {
@@ -24,7 +32,14 @@ interface TeamMember {
     is_active: boolean;
 }
 
-type SettingsTab = 'profile' | 'team' | 'webhook' | 'notifications';
+type SettingsTab = 'profile' | 'subscription' | 'team' | 'webhook' | 'notifications';
+
+const PLAN_LIMITS: Record<string, { devices: number; broadcasts: number; contacts: number; status_schedules: number; team_members: number; price: string; priceNum: number }> = {
+    free: { devices: 1, broadcasts: 5, contacts: 500, status_schedules: 2, team_members: 1, price: 'Gratis', priceNum: 0 },
+    starter: { devices: 3, broadcasts: 50, contacts: 5000, status_schedules: 10, team_members: 3, price: 'Rp 99.000/bln', priceNum: 99000 },
+    pro: { devices: 10, broadcasts: -1, contacts: 50000, status_schedules: -1, team_members: 10, price: 'Rp 299.000/bln', priceNum: 299000 },
+    enterprise: { devices: -1, broadcasts: -1, contacts: -1, status_schedules: -1, team_members: -1, price: 'Custom', priceNum: 0 },
+};
 
 export default function SettingsPage() {
     const [tab, setTab] = useState<SettingsTab>('profile');
@@ -53,6 +68,15 @@ export default function SettingsPage() {
     const [teamSaving, setTeamSaving] = useState(false);
     const [teamError, setTeamError] = useState('');
 
+    // Notifications
+    const [notifPrefs, setNotifPrefs] = useState({
+        new_message: true,
+        campaign_complete: true,
+        device_disconnect: true,
+    });
+    const [notifSaving, setNotifSaving] = useState(false);
+    const [notifSaved, setNotifSaved] = useState(false);
+
     useEffect(() => {
         fetch('/api/settings/profile')
             .then(r => r.json())
@@ -63,6 +87,11 @@ export default function SettingsPage() {
                     setTimezone(d.data.timezone || 'Asia/Jakarta');
                     setLanguage(d.data.language || 'id');
                     setWebhookToken(d.data.tenant?.webhook_token || '');
+                    // Load notification prefs from tenant settings
+                    const savedNotifs = d.data.tenant?.settings?.notifications;
+                    if (savedNotifs) {
+                        setNotifPrefs(prev => ({ ...prev, ...savedNotifs }));
+                    }
                 }
             })
             .finally(() => setLoading(false));
@@ -146,8 +175,28 @@ export default function SettingsPage() {
         } catch { }
     };
 
+    const handleSaveNotifications = async () => {
+        setNotifSaving(true); setNotifSaved(false);
+        try {
+            const res = await fetch('/api/settings/notifications', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ notifications: notifPrefs }),
+            });
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error);
+            setNotifSaved(true);
+            setTimeout(() => setNotifSaved(false), 3000);
+        } catch (err: any) { alert('Gagal menyimpan: ' + err.message); }
+        finally { setNotifSaving(false); }
+    };
+
+    const currentPlan = profile?.tenant?.plan || 'free';
+    const currentLimits = PLAN_LIMITS[currentPlan] || PLAN_LIMITS.free;
+
     const TABS = [
         { id: 'profile', label: '👤 Profil', icon: <User size={16} /> },
+        { id: 'subscription', label: '💎 Langganan', icon: <CreditCard size={16} /> },
         { id: 'team', label: '👥 Team', icon: <Users size={16} /> },
         { id: 'webhook', label: '🔗 Webhook', icon: <Globe size={16} /> },
         { id: 'notifications', label: '🔔 Notifikasi', icon: <Bell size={16} /> },
@@ -229,6 +278,96 @@ export default function SettingsPage() {
                                         <button className="btn btn-primary" onClick={handleSaveProfile} disabled={saving}>
                                             {saving ? <><Loader2 size={16} className="animate-spin" />Menyimpan...</> : <><Save size={16} />Simpan Profil</>}
                                         </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Subscription Tab */}
+                            {tab === 'subscription' && (
+                                <div>
+                                    <h3 style={{ fontSize: 'var(--text-md)', marginBottom: 'var(--space-5)' }}>Langganan & Paket</h3>
+
+                                    {/* Current Plan */}
+                                    <div style={{ padding: 'var(--space-5)', borderRadius: 'var(--radius-lg)', border: '2px solid var(--color-accent)', background: 'var(--color-accent-soft)', marginBottom: 'var(--space-6)' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 4 }}>
+                                                    {currentPlan === 'free' ? <Zap size={18} style={{ color: 'var(--color-accent)' }} /> :
+                                                     currentPlan === 'pro' ? <Crown size={18} style={{ color: '#F59E0B' }} /> :
+                                                     <Sparkles size={18} style={{ color: 'var(--color-accent)' }} />}
+                                                    <span style={{ fontSize: 'var(--text-lg)', fontWeight: 700, textTransform: 'capitalize' }}>{currentPlan} Plan</span>
+                                                </div>
+                                                <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)' }}>{currentLimits.price}</span>
+                                            </div>
+                                            <span className={`badge ${currentPlan === 'free' ? 'badge-default' : 'badge-success'}`} style={{ fontSize: 'var(--text-sm)', padding: '6px 16px' }}>
+                                                {currentPlan === 'free' ? 'Paket Gratis' : 'Aktif'}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    {/* Plan Limits */}
+                                    <h4 style={{ fontSize: 'var(--text-sm)', fontWeight: 600, marginBottom: 'var(--space-3)', color: 'var(--color-text-muted)' }}>BATAS PAKET ANDA</h4>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--space-3)', marginBottom: 'var(--space-6)' }}>
+                                        {[
+                                            { label: 'Perangkat WA', value: currentLimits.devices, icon: '📱' },
+                                            { label: 'Broadcast/bln', value: currentLimits.broadcasts, icon: '📤' },
+                                            { label: 'Kontak', value: currentLimits.contacts, icon: '👥' },
+                                            { label: 'Jadwal Status', value: currentLimits.status_schedules, icon: '📅' },
+                                            { label: 'Anggota Tim', value: currentLimits.team_members, icon: '🧑‍💼' },
+                                        ].map(item => (
+                                            <div key={item.label} style={{ padding: 'var(--space-3)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+                                                <span style={{ fontSize: 20 }}>{item.icon}</span>
+                                                <div>
+                                                    <div style={{ fontSize: 'var(--text-lg)', fontWeight: 700 }}>{item.value === -1 ? '∞' : item.value.toLocaleString()}</div>
+                                                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>{item.label}</div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {/* Plan Comparison */}
+                                    <h4 style={{ fontSize: 'var(--text-sm)', fontWeight: 600, marginBottom: 'var(--space-3)', color: 'var(--color-text-muted)' }}>SEMUA PAKET</h4>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 'var(--space-3)' }}>
+                                        {Object.entries(PLAN_LIMITS).map(([planKey, limits]) => {
+                                            const isCurrentPlan = planKey === currentPlan;
+                                            const planNames: Record<string, string> = { free: 'Free', starter: 'Starter', pro: 'Pro', enterprise: 'Enterprise' };
+                                            const planColors: Record<string, string> = { free: 'var(--color-text-muted)', starter: 'var(--color-info)', pro: '#F59E0B', enterprise: 'var(--color-accent)' };
+                                            return (
+                                                <div key={planKey} style={{
+                                                    padding: 'var(--space-4)', borderRadius: 'var(--radius-lg)',
+                                                    border: isCurrentPlan ? '2px solid var(--color-accent)' : '1px solid var(--color-border)',
+                                                    background: isCurrentPlan ? 'var(--color-accent-soft)' : 'transparent',
+                                                    position: 'relative', overflow: 'hidden',
+                                                }}>
+                                                    {planKey === 'pro' && (
+                                                        <div style={{ position: 'absolute', top: 8, right: -28, background: '#F59E0B', color: '#000', fontSize: 9, padding: '2px 32px', transform: 'rotate(45deg)', fontWeight: 700 }}>POPULER</div>
+                                                    )}
+                                                    <div style={{ textAlign: 'center', marginBottom: 'var(--space-3)' }}>
+                                                        <div style={{ fontSize: 'var(--text-md)', fontWeight: 700, color: planColors[planKey], marginBottom: 2 }}>{planNames[planKey]}</div>
+                                                        <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600 }}>{limits.price}</div>
+                                                    </div>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 'var(--text-xs)' }}>
+                                                        <span><Check size={12} style={{ color: 'var(--color-success)' }} /> {limits.devices === -1 ? 'Unlimited' : limits.devices} device</span>
+                                                        <span><Check size={12} style={{ color: 'var(--color-success)' }} /> {limits.broadcasts === -1 ? 'Unlimited' : limits.broadcasts} broadcast</span>
+                                                        <span><Check size={12} style={{ color: 'var(--color-success)' }} /> {limits.contacts === -1 ? 'Unlimited' : limits.contacts.toLocaleString()} kontak</span>
+                                                        <span><Check size={12} style={{ color: 'var(--color-success)' }} /> {limits.team_members === -1 ? 'Unlimited' : limits.team_members} anggota</span>
+                                                    </div>
+                                                    <div style={{ marginTop: 'var(--space-3)', textAlign: 'center' }}>
+                                                        {isCurrentPlan ? (
+                                                            <span className="badge badge-accent" style={{ fontSize: 'var(--text-xs)' }}>Paket Saat Ini</span>
+                                                        ) : (
+                                                            <button className="btn btn-sm btn-secondary" style={{ width: '100%', fontSize: 'var(--text-xs)' }} onClick={() => alert(`Hubungi admin untuk upgrade ke ${planNames[planKey]}.\n\nWhatsApp: 628xxx\nEmail: admin@gasbroadcast.com`)}>
+                                                                {PLAN_LIMITS[planKey].priceNum > (PLAN_LIMITS[currentPlan]?.priceNum || 0) ? 'Upgrade' : 'Pilih'}
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+
+                                    <div style={{ marginTop: 'var(--space-4)', padding: 'var(--space-3)', background: 'var(--color-info-soft)', border: '1px solid rgba(59,130,246,0.2)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-sm)' }}>
+                                        💡 Untuk upgrade paket, silakan hubungi tim sales kami via WhatsApp atau email. Pembayaran tersedia melalui transfer bank atau e-wallet.
                                     </div>
                                 </div>
                             )}
@@ -396,23 +535,48 @@ export default function SettingsPage() {
                             {tab === 'notifications' && (
                                 <div>
                                     <h3 style={{ fontSize: 'var(--text-md)', marginBottom: 'var(--space-5)' }}>Preferensi Notifikasi</h3>
+                                    {notifSaved && <div style={{ padding: 'var(--space-3)', background: 'var(--color-success-soft)', color: 'var(--color-success)', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-4)', fontSize: 'var(--text-sm)', display: 'flex', gap: 8 }}><CheckCircle size={16} />Preferensi tersimpan!</div>}
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
                                         {[
-                                            { label: 'Pesan masuk baru', desc: 'Notifikasi saat ada pesan WA masuk' },
-                                            { label: 'Campaign selesai', desc: 'Notifikasi saat broadcast campaign selesai' },
-                                            { label: 'Device terputus', desc: 'Notifikasi saat device WA terputus' },
-                                        ].map((item, i) => (
-                                            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-3) var(--space-4)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
-                                                <div>
-                                                    <div style={{ fontWeight: 500, fontSize: 'var(--text-sm)' }}>{item.label}</div>
-                                                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>{item.desc}</div>
+                                            { key: 'new_message', label: 'Pesan masuk baru', desc: 'Notifikasi saat ada pesan WA masuk', icon: '💬' },
+                                            { key: 'campaign_complete', label: 'Campaign selesai', desc: 'Notifikasi saat broadcast campaign selesai', icon: '✅' },
+                                            { key: 'device_disconnect', label: 'Device terputus', desc: 'Notifikasi saat device WA terputus', icon: '🔌' },
+                                        ].map(item => (
+                                            <div key={item.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-3) var(--space-4)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', transition: 'all 0.15s', background: (notifPrefs as any)[item.key] ? 'transparent' : 'var(--color-bg-tertiary)' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+                                                    <span style={{ fontSize: 20 }}>{item.icon}</span>
+                                                    <div>
+                                                        <div style={{ fontWeight: 500, fontSize: 'var(--text-sm)' }}>{item.label}</div>
+                                                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>{item.desc}</div>
+                                                    </div>
                                                 </div>
-                                                <input type="checkbox" defaultChecked style={{ width: 18, height: 18, cursor: 'pointer' }} />
+                                                <label style={{ position: 'relative', width: 44, height: 24, cursor: 'pointer' }}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={(notifPrefs as any)[item.key]}
+                                                        onChange={e => setNotifPrefs(prev => ({ ...prev, [item.key]: e.target.checked }))}
+                                                        style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
+                                                    />
+                                                    <span style={{
+                                                        position: 'absolute', inset: 0, borderRadius: 24,
+                                                        background: (notifPrefs as any)[item.key] ? 'var(--color-accent)' : 'var(--color-bg-tertiary)',
+                                                        border: '2px solid ' + ((notifPrefs as any)[item.key] ? 'var(--color-accent)' : 'var(--color-border)'),
+                                                        transition: 'all 0.2s',
+                                                    }}>
+                                                        <span style={{
+                                                            position: 'absolute', width: 16, height: 16, borderRadius: '50%',
+                                                            background: 'white', top: 2, left: (notifPrefs as any)[item.key] ? 22 : 2,
+                                                            transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                                                        }} />
+                                                    </span>
+                                                </label>
                                             </div>
                                         ))}
                                     </div>
                                     <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--space-5)' }}>
-                                        <button className="btn btn-primary"><Save size={16} /> Simpan Preferensi</button>
+                                        <button className="btn btn-primary" onClick={handleSaveNotifications} disabled={notifSaving}>
+                                            {notifSaving ? <><Loader2 size={16} className="animate-spin" />Menyimpan...</> : <><Save size={16} /> Simpan Preferensi</>}
+                                        </button>
                                     </div>
                                 </div>
                             )}

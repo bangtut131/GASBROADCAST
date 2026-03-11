@@ -113,16 +113,16 @@ export default function Sidebar() {
 
       {/* Upgrade Banner */}
       {!collapsed && (
-        <div className={s.upgrade}>
+        <a href="/dashboard/settings" className={s.upgrade} style={{ textDecoration: 'none', cursor: 'pointer' }}>
           <div className={s.upgradeGlow} />
           <div className={s.upgradeIcon}>
             <Sparkles size={18} />
           </div>
           <div className={s.upgradeTextWrap}>
-            <span className={s.upgradeTitle}>Upgrade to Pro</span>
-            <span className={s.upgradeDesc}>Unlock unlimited devices</span>
+            <span className={s.upgradeTitle}>Kelola Langganan</span>
+            <span className={s.upgradeDesc}>Lihat paket & upgrade</span>
           </div>
-        </div>
+        </a>
       )}
 
       {/* Collapse Toggle */}

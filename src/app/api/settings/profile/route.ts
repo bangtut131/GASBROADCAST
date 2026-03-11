@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
 
         const { data: profile } = await supabase
             .from('profiles')
-            .select('*, tenant:tenants(id, name, plan, webhook_token)')
+            .select('*, tenant:tenants(id, name, plan, settings, webhook_token)')
             .eq('id', user.id)
             .single();
 
