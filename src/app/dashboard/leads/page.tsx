@@ -4,13 +4,14 @@ import { useState } from 'react';
 import {
     MapPin, Search, Loader2, Phone, Star, Download,
     Users, Send, ArrowLeft, ExternalLink, Globe,
-    CheckCircle, AlertCircle, Building2, Import
+    CheckCircle, AlertCircle, Building2, Import, Clock
 } from 'lucide-react';
 
 interface Business {
     name: string;
     phone: string;
     address: string;
+    hours: string;
     category: string;
     rating: string;
     reviewCount: string;
@@ -107,7 +108,7 @@ export default function LeadsPage() {
     const handleExportCSV = () => {
         const selected = results.filter(r => r.selected);
         if (selected.length === 0) return;
-        const headers = ['name', 'phone', 'address', 'category', 'rating', 'website'];
+        const headers = ['name', 'phone', 'address', 'hours', 'category', 'rating', 'website'];
         const csv = [
             headers.join(','),
             ...selected.map(b => headers.map(h => `"${(b as any)[h] || ''}"`).join(','))
@@ -223,6 +224,7 @@ export default function LeadsPage() {
                                     <th style={{ padding: 'var(--space-2) var(--space-3)', textAlign: 'left', fontWeight: 600, fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Bisnis</th>
                                     <th style={{ padding: 'var(--space-2) var(--space-3)', textAlign: 'left', fontWeight: 600, fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Telepon</th>
                                     <th style={{ padding: 'var(--space-2) var(--space-3)', textAlign: 'left', fontWeight: 600, fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Alamat</th>
+                                    <th style={{ padding: 'var(--space-2) var(--space-3)', textAlign: 'left', fontWeight: 600, fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Jam Buka</th>
                                     <th style={{ padding: 'var(--space-2) var(--space-3)', textAlign: 'center', fontWeight: 600, fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Rating</th>
                                     <th style={{ padding: 'var(--space-2) var(--space-3)', textAlign: 'center', fontWeight: 600, fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Link</th>
                                 </tr>
@@ -246,6 +248,13 @@ export default function LeadsPage() {
                                         </td>
                                         <td style={{ padding: 'var(--space-2) var(--space-3)', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                             {biz.address || '—'}
+                                        </td>
+                                        <td style={{ padding: 'var(--space-2) var(--space-3)', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
+                                            {biz.hours ? (
+                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                                    <Clock size={11} /> {biz.hours}
+                                                </span>
+                                            ) : '—'}
                                         </td>
                                         <td style={{ padding: 'var(--space-2) var(--space-3)', textAlign: 'center' }}>
                                             {biz.rating ? (

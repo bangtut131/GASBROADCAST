@@ -5,6 +5,7 @@ export interface ScrapedBusiness {
     name: string;
     phone: string;
     address: string;
+    hours: string;
     category: string;
     rating: string;
     reviewCount: string;
@@ -136,20 +137,51 @@ export async function scrapeGoogleMaps(
                 const ratingEl = card.querySelector('.MW4etd');
                 const reviewEl = card.querySelector('.UY7F9');
 
-                // Get all W4Efsd spans for category/address
+                // Helper: detect if text is business hours
+                const isHoursText = (t: string) => {
+                    const lower = t.toLowerCase();
+                    return /(buka|tutup|open|closed|24\s*jam|hours)/i.test(lower) ||
+                        /\b\d{1,2}[.:.]\d{2}\b/.test(t) ||
+                        /(senin|selasa|rabu|kamis|jumat|sabtu|minggu|monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i.test(lower) ||
+                        /⋅/.test(t);
+                };
+
+                // Get all W4Efsd spans for category/address/hours
                 const infoSpans = card.querySelectorAll('.W4Efsd');
                 let category = '';
                 let address = '';
+                let hours = '';
+                const textParts: string[] = [];
 
-                infoSpans.forEach((span, idx) => {
-                    const text = span.textContent?.trim() || '';
-                    if (idx === 0 && text.includes('·')) {
-                        const parts = text.split('·');
-                        category = parts[parts.length - 1]?.trim() || '';
+                infoSpans.forEach(span => {
+                    // Get direct child spans to separate info pieces
+                    const innerSpans = span.querySelectorAll(':scope > span');
+                    if (innerSpans.length > 0) {
+                        innerSpans.forEach(s => {
+                            const t = s.textContent?.trim() || '';
+                            if (t && t !== '·' && t !== '⋅') textParts.push(t);
+                        });
+                    } else {
+                        const t = span.textContent?.trim() || '';
+                        if (t) textParts.push(t);
                     }
-                    if (text && !category && idx < 3) category = text;
-                    if (text && text.length > 15 && idx > 0) address = text;
                 });
+
+                // Parse text parts
+                for (const part of textParts) {
+                    const clean = part.replace(/^[·⋅\s]+|[·⋅\s]+$/g, '').trim();
+                    if (!clean) continue;
+
+                    if (isHoursText(clean)) {
+                        if (!hours) hours = clean;
+                    } else if (!category && clean.length < 40 && !/\d{3,}/.test(clean)) {
+                        // Short text without many digits = likely category
+                        category = clean;
+                    } else if (clean.length > 10 && !isHoursText(clean)) {
+                        // Longer text that's not hours = likely address
+                        if (!address || clean.length > address.length) address = clean;
+                    }
+                }
 
                 // Phone from text content
                 const allText = card.textContent || '';
@@ -161,7 +193,8 @@ export async function scrapeGoogleMaps(
                 items.push({
                     name,
                     phone: phoneMatch ? phoneMatch[1].replace(/[\s\-()]/g, '') : '',
-                    address: address,
+                    address,
+                    hours,
                     category: category.replace(/·\s*/g, '').trim(),
                     rating: ratingEl?.textContent?.trim() || '',
                     reviewCount: reviewEl?.textContent?.trim()?.replace(/[()]/g, '') || '',
