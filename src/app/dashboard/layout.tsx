@@ -36,7 +36,7 @@ export default async function DashboardLayout({
 
     return (
         <div className="dashboard-layout">
-            <Sidebar />
+            <Sidebar profile={profile as Profile} />
             <div className="dashboard-main">
                 <Header profile={profile as Profile} tenant={tenant as Tenant} />
                 <main className="dashboard-content">

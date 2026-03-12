@@ -22,7 +22,12 @@ import {
   Crown,
   MapPin,
 } from 'lucide-react';
+import type { Profile } from '@/types';
 import s from './Sidebar.module.css';
+
+interface SidebarProps {
+  profile?: Profile;
+}
 
 const navSections = [
   {
@@ -60,7 +65,7 @@ const navSections = [
   },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ profile }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
 
@@ -90,6 +95,10 @@ export default function Sidebar() {
             {section.items.map((item) => {
               const isActive = pathname === item.href ||
                 (item.href !== '/dashboard' && pathname.startsWith(item.href));
+              const isAdminPanel = item.href === '/admin';
+              if (isAdminPanel && profile?.role !== 'owner') {
+                  return null;
+              }
 
               return (
                 <Link
