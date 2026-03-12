@@ -146,7 +146,6 @@ export async function POST(request: NextRequest) {
                 direction: 'inbound',
                 content: payload.body,
                 message_type: payload.type || 'text',
-                external_id: payload.id,
             });
 
             if (msgError) {
