@@ -16,6 +16,18 @@ export async function GET(request: NextRequest) {
 
         if (error) throw error;
 
+        // Get unread counts by phone for inbound messages
+        const { data: unreadCounts } = await supabase
+            .from('messages')
+            .select('phone')
+            .eq('direction', 'inbound')
+            .eq('is_read', false);
+            
+        const unreadMap = new Map<string, number>();
+        (unreadCounts || []).forEach(m => {
+            unreadMap.set(m.phone, (unreadMap.get(m.phone) || 0) + 1);
+        });
+
         // Group by phone - take first (latest) per phone
         const seen = new Set<string>();
         const conversations = (messages || [])
@@ -29,7 +41,7 @@ export async function GET(request: NextRequest) {
                 name: m.contact?.name || null,
                 lastMessage: m.content?.substring(0, 60) || '[Media]',
                 lastTime: m.created_at,
-                unread: 0,
+                unread: unreadMap.get(m.phone) || 0,
                 deviceName: m.device?.name || '',
             }));
 

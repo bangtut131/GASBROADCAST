@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import {
     Search, MessageSquare, Send, Smartphone, Bot, User,
-    Circle, RefreshCw, Loader2, UserCheck
+    Circle, RefreshCw, Loader2, UserCheck, Trash2, Mail, MailOpen
 } from 'lucide-react';
 
 interface Conversation {
@@ -138,6 +138,47 @@ export default function InboxPage() {
         } finally { setSending(false); }
     };
 
+    const handleDeleteConversation = async (phone: string) => {
+        if (!confirm('Hapus seluruh percakapan ini?')) return;
+        try {
+            await fetch(`/api/inbox/${encodeURIComponent(phone)}`, { method: 'DELETE' });
+            setSelectedPhone(null);
+            setMessages([]);
+            loadConversations();
+        } catch {}
+    };
+
+    const handleDeleteMessage = async (msgId: string) => {
+        if (!selectedPhone) return;
+        if (!confirm('Hapus pesan ini?')) return;
+        try {
+            await fetch(`/api/inbox/${encodeURIComponent(selectedPhone)}?id=${msgId}`, { method: 'DELETE' });
+            setMessages(prev => prev.filter(m => m.id !== msgId));
+            loadConversations();
+        } catch {}
+    };
+
+    const handleToggleRead = async (phone: string, is_read: boolean) => {
+        try {
+            await fetch(`/api/inbox/${encodeURIComponent(phone)}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ is_read })
+            });
+            loadConversations();
+        } catch {}
+    };
+
+    // Auto mark as read when selecting a conversation that has unread messages
+    useEffect(() => {
+        if (selectedPhone) {
+            const conv = conversations.find(c => c.phone === selectedPhone);
+            if (conv && conv.unread > 0) {
+                handleToggleRead(selectedPhone, true);
+            }
+        }
+    }, [selectedPhone, conversations]);
+
     const filtered = conversations.filter(c =>
         (c.name || c.phone).toLowerCase().includes(search.toLowerCase())
     );
@@ -199,17 +240,24 @@ export default function InboxPage() {
                                         {(conv.name || conv.phone)[0].toUpperCase()}
                                     </div>
                                     <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div className="flex justify-between">
-                                            <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        <div className="flex justify-between items-center">
+                                            <span style={{ fontWeight: conv.unread > 0 ? 700 : 500, fontSize: 'var(--text-sm)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: conv.unread > 0 ? 'var(--color-text-primary)' : 'var(--color-text-primary)' }}>
                                                 {conv.name || conv.phone}
                                             </span>
-                                            <span style={{ fontSize: 10, color: 'var(--color-text-muted)', flexShrink: 0, marginLeft: 8 }}>
+                                            <span style={{ fontSize: 10, color: conv.unread > 0 ? 'var(--color-accent)' : 'var(--color-text-muted)', flexShrink: 0, marginLeft: 8, fontWeight: conv.unread > 0 ? 600 : 400 }}>
                                                 {formatTime(conv.lastTime)}
                                             </span>
                                         </div>
-                                        <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
-                                            {conv.lastMessage}
-                                        </p>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
+                                            <p style={{ fontSize: 'var(--text-xs)', color: conv.unread > 0 ? 'var(--color-text-primary)' : 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: conv.unread > 0 ? 500 : 400, flex: 1, paddingRight: 8 }}>
+                                                {conv.lastMessage}
+                                            </p>
+                                            {conv.unread > 0 && (
+                                                <span style={{ background: 'var(--color-accent)', color: 'white', borderRadius: '10px', padding: '2px 6px', fontSize: 10, fontWeight: 700, minWidth: 20, textAlign: 'center' }}>
+                                                    {conv.unread}
+                                                </span>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -232,9 +280,26 @@ export default function InboxPage() {
                                 <Smartphone size={10} /> {selectedPhone}
                             </div>
                         </div>
-                        <button className="btn btn-secondary btn-sm" onClick={() => loadMessages(selectedPhone)}>
-                            <RefreshCw size={14} /> Refresh
-                        </button>
+                        <div className="flex items-center gap-2">
+                            <button 
+                                className="btn btn-ghost btn-sm btn-icon" 
+                                onClick={() => handleToggleRead(selectedPhone, false)}
+                                title="Tandai Belum Dibaca"
+                            >
+                                <Mail size={16} />
+                            </button>
+                            <button 
+                                className="btn btn-ghost btn-sm btn-icon" 
+                                onClick={() => handleDeleteConversation(selectedPhone)}
+                                style={{ color: 'var(--color-danger)' }}
+                                title="Hapus Percakapan"
+                            >
+                                <Trash2 size={16} />
+                            </button>
+                            <button className="btn btn-secondary btn-sm" onClick={() => loadMessages(selectedPhone)}>
+                                <RefreshCw size={14} /> Refresh
+                            </button>
+                        </div>
                     </div>
 
                     {/* Messages */}
@@ -249,7 +314,17 @@ export default function InboxPage() {
                             </div>
                         )}
                         {messages.map(msg => (
-                            <div key={msg.id} style={{ display: 'flex', justifyContent: msg.direction === 'outbound' ? 'flex-end' : 'flex-start' }}>
+                            <div key={msg.id} style={{ display: 'flex', justifyContent: msg.direction === 'outbound' ? 'flex-end' : 'flex-start' }} className="group">
+                                {msg.direction === 'outbound' && (
+                                    <button 
+                                        onClick={() => handleDeleteMessage(msg.id)}
+                                        className="btn btn-ghost btn-sm btn-icon" 
+                                        style={{ opacity: 0, transition: 'opacity 0.2s', color: 'var(--color-danger)', marginRight: 4, alignSelf: 'center' }}
+                                        title="Hapus Pesan"
+                                    >
+                                        <Trash2 size={14} />
+                                    </button>
+                                )}
                                 <div style={{ maxWidth: '65%' }}>
                                     {msg.is_from_bot && (
                                         <div style={{ fontSize: 10, color: 'var(--color-accent)', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 3 }}>
@@ -273,6 +348,16 @@ export default function InboxPage() {
                                         {formatTime(msg.created_at)}{msg.id.startsWith('opt-') ? ' · mengirim...' : ''}
                                     </div>
                                 </div>
+                                {msg.direction === 'inbound' && (
+                                    <button 
+                                        onClick={() => handleDeleteMessage(msg.id)}
+                                        className="btn btn-ghost btn-sm btn-icon" 
+                                        style={{ opacity: 0, transition: 'opacity 0.2s', color: 'var(--color-danger)', marginLeft: 4, alignSelf: 'center' }}
+                                        title="Hapus Pesan"
+                                    >
+                                        <Trash2 size={14} />
+                                    </button>
+                                )}
                             </div>
                         ))}
                         <div ref={messagesEndRef} />
