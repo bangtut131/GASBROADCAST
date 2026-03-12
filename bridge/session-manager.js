@@ -9,7 +9,7 @@ import makeWASocket, {
     fetchLatestBaileysVersion,
     generateWAMessageFromContent
 } from '@whiskeysockets/baileys';
-import { existsSync, mkdirSync, rmSync, readdirSync, statSync } from 'fs';
+import { existsSync, mkdirSync, rmSync, readdirSync, statSync, readFileSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import pino from 'pino';
@@ -85,6 +85,42 @@ export async function createSession(sessionId) {
     };
     sessions.set(sessionId, sessionData);
 
+    // ==================== Persistent Message Store ====================
+    // Saves message content to disk per session for Baileys retry (getMessage handler)
+    // Without this, in-memory store is lost on restart → Bad MAC on subsequent msgs
+    const storePath = join(sessionDir, 'msg-store.json');
+    let storeObj = {};
+    try {
+        if (existsSync(storePath)) {
+            storeObj = JSON.parse(readFileSync(storePath, 'utf8'));
+            console.log(`[${sessionId}] Loaded ${Object.keys(storeObj).length} messages from disk store`);
+        }
+    } catch (e) { storeObj = {}; }
+
+    let saveTimer = null;
+    const scheduleSave = () => {
+        if (saveTimer) clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => {
+            try {
+                // Keep only last 200 messages to avoid bloat
+                const keys = Object.keys(storeObj);
+                if (keys.length > 200) {
+                    const oldest = keys.slice(0, keys.length - 200);
+                    oldest.forEach(k => delete storeObj[k]);
+                }
+                writeFileSync(storePath, JSON.stringify(storeObj), 'utf8');
+            } catch { }
+        }, 1000);
+    };
+
+    const messageStore = {
+        get: (key) => storeObj[key] || null,
+        set: (key, val) => {
+            storeObj[key] = val;
+            scheduleSave();
+        },
+    };
+
     // In-memory store for message retry (required for Signal Protocol session renegotiation)
     // Without this, only the first message per contact can be decrypted
     const msgRetryCounterMap = new Map();
@@ -92,8 +128,6 @@ export async function createSession(sessionId) {
         get: (key) => msgRetryCounterMap.get(key) || 0,
         set: (key, val) => msgRetryCounterMap.set(key, val),
     };
-    // Message store for getMessage — needed to reply to retry requests from contacts
-    const messageStore = new Map();
 
     let sock;
     try {
