@@ -29,11 +29,13 @@ export async function GET(request: NextRequest) {
                 name: m.contact?.name || null,
                 lastMessage: m.content?.substring(0, 60) || '[Media]',
                 lastTime: m.created_at,
-                unread: 0, // TODO: implement unread count
+                unread: 0,
                 deviceName: m.device?.name || '',
             }));
 
-        return NextResponse.json({ success: true, data: conversations });
+        const response = NextResponse.json({ success: true, data: conversations });
+        response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+        return response;
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }

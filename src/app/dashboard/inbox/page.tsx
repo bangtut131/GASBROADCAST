@@ -39,7 +39,7 @@ export default function InboxPage() {
 
     const loadConversations = useCallback(async () => {
         try {
-            const res = await fetch('/api/inbox');
+            const res = await fetch('/api/inbox', { cache: 'no-store' });
             const data = await res.json();
             if (data.success) setConversations(data.data);
         } catch { } finally { setLoading(false); }
@@ -47,7 +47,7 @@ export default function InboxPage() {
 
     const loadMessages = useCallback(async (phone: string) => {
         try {
-            const res = await fetch(`/api/inbox/${encodeURIComponent(phone)}`);
+            const res = await fetch(`/api/inbox/${encodeURIComponent(phone)}`, { cache: 'no-store' });
             const data = await res.json();
             if (data.success) setMessages(data.data);
         } catch { }

@@ -21,7 +21,9 @@ export async function GET(
             .limit(100);
 
         if (error) throw error;
-        return NextResponse.json({ success: true, data: messages });
+        const response = NextResponse.json({ success: true, data: messages });
+        response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+        return response;
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
