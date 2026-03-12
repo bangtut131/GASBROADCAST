@@ -173,6 +173,8 @@ export async function createSession(sessionId) {
             if (msg.key.fromMe) continue;
             const from = msg.key.remoteJid;
             if (!from || from.endsWith('@g.us')) continue;
+            // Skip @lid (Linked Device IDs) — these are internal WhatsApp messages, not real users
+            if (from.endsWith('@lid')) continue;
 
             const body =
                 msg.message?.conversation ||
@@ -180,11 +182,17 @@ export async function createSession(sessionId) {
                 msg.message?.imageMessage?.caption ||
                 msg.message?.videoMessage?.caption || '';
 
+            // Clean phone number — strip both @s.whatsapp.net and @lid
+            const phone = from
+                .replace('@s.whatsapp.net', '')
+                .replace('@lid', '')
+                .trim();
+
             await sendWebhook(sessionId, 'message.received', {
                 sessionId,
                 payload: {
                     id: msg.key.id,
-                    from: from.replace('@s.whatsapp.net', ''),
+                    from: phone,
                     body,
                     type: getMessageType(msg),
                     timestamp: msg.messageTimestamp,
