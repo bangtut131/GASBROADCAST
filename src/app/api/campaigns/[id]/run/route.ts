@@ -83,6 +83,19 @@ export async function POST(
                         sent_at: new Date().toISOString(),
                     }).eq('id', msg.id);
                     totalSent++;
+
+                    // Save to messages table for inbox history
+                    await supabase.from('messages').insert({
+                        tenant_id: device.tenant_id,
+                        device_id: device.id,
+                        phone: msg.phone,
+                        direction: 'outbound',
+                        message_type: campaign.media_type === 'text' || !campaign.media_type ? 'text' : campaign.media_type,
+                        content: personalized,
+                        is_from_bot: false,
+                    }).then(({ error }) => {
+                        if (error) console.warn('[Campaign Run] Message history insert error:', error.message);
+                    });
                 } else {
                     await supabase.from('broadcast_messages').update({
                         status: 'failed',
