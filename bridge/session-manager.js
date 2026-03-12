@@ -399,7 +399,10 @@ export function getQR(sessionId) {
 
 export async function restorePersistedSessions() {
     if (!existsSync(SESSIONS_DIR)) return;
+    // Skip system/filesystem dirs that are not WA sessions
+    const SKIP_DIRS = new Set(['lost+found', '.lost+found', 'tmp', '.DS_Store']);
     const dirs = readdirSync(SESSIONS_DIR).filter(d => {
+        if (SKIP_DIRS.has(d) || d.startsWith('.')) return false;
         try { return statSync(join(SESSIONS_DIR, d)).isDirectory(); } catch { return false; }
     });
     if (dirs.length === 0) return;
