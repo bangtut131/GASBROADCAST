@@ -116,10 +116,13 @@ export async function POST(request: NextRequest) {
             const payload = data?.payload;
             console.log('[Webhook wa-web] message payload:', JSON.stringify(payload));
 
-            if (!payload?.from || !payload?.body) {
-                console.warn('[Webhook wa-web] Missing from or body, skipping');
+            if (!payload?.from) {
+                console.warn('[Webhook wa-web] Missing from, skipping');
                 return NextResponse.json({ success: true });
             }
+
+            // Use body or fallback to [Media] so messages are always saved
+            const messageBody = payload.body || '[Media]';
 
             const device = await findDevice(sessionId);
             if (!device) {
@@ -144,7 +147,7 @@ export async function POST(request: NextRequest) {
                 device_id: device.id,
                 phone,
                 direction: 'inbound',
-                content: payload.body,
+                content: messageBody,
                 message_type: payload.type || 'text',
             });
 

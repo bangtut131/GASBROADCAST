@@ -176,17 +176,30 @@ export async function createSession(sessionId) {
             // Skip @lid (Linked Device IDs) — these are internal WhatsApp messages, not real users
             if (from.endsWith('@lid')) continue;
 
+            // Extract body — handle all known message types including nested wrappers
+            const m = msg.message;
             const body =
-                msg.message?.conversation ||
-                msg.message?.extendedTextMessage?.text ||
-                msg.message?.imageMessage?.caption ||
-                msg.message?.videoMessage?.caption || '';
+                m?.conversation ||
+                m?.extendedTextMessage?.text ||
+                m?.imageMessage?.caption ||
+                m?.videoMessage?.caption ||
+                m?.documentMessage?.caption ||
+                m?.ephemeralMessage?.message?.conversation ||
+                m?.ephemeralMessage?.message?.extendedTextMessage?.text ||
+                m?.viewOnceMessage?.message?.conversation ||
+                m?.viewOnceMessageV2?.message?.imageMessage?.caption ||
+                m?.buttonsResponseMessage?.selectedDisplayText ||
+                m?.listResponseMessage?.title ||
+                m?.templateButtonReplyMessage?.selectedDisplayText ||
+                '';
 
             // Clean phone number — strip both @s.whatsapp.net and @lid
             const phone = from
                 .replace('@s.whatsapp.net', '')
                 .replace('@lid', '')
                 .trim();
+
+            console.log(`[${sessionId}] 📨 Message from ${phone}: "${body.substring(0, 60)}" type=${type}`);
 
             await sendWebhook(sessionId, 'message.received', {
                 sessionId,
