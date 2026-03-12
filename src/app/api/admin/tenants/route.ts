@@ -95,3 +95,55 @@ export async function PATCH(request: NextRequest) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
+
+// DELETE /api/admin/tenants — Delete a tenant and its users
+export async function DELETE(request: NextRequest) {
+    try {
+        const supabase = await createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', user.id)
+            .single();
+        if (!profile || profile.role !== 'owner') {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
+
+        const { searchParams } = new URL(request.url);
+        const tenant_id = searchParams.get('id');
+
+        if (!tenant_id) {
+            return NextResponse.json({ error: 'Tenant ID required' }, { status: 400 });
+        }
+
+        const serviceSupabase = await createServiceClient();
+
+        // Find users to delete from auth
+        const { data: profiles } = await serviceSupabase
+            .from('profiles')
+            .select('id')
+            .eq('tenant_id', tenant_id);
+            
+        // Delete tenant (Cascade rules should handle devices, contacts, etc.)
+        const { error: deleteTenantError } = await serviceSupabase
+            .from('tenants')
+            .delete()
+            .eq('id', tenant_id);
+            
+        if (deleteTenantError) throw deleteTenantError;
+
+        // Delete users from auth.users
+        if (profiles && profiles.length > 0) {
+            for (const p of profiles) {
+                await serviceSupabase.auth.admin.deleteUser(p.id);
+            }
+        }
+
+        return NextResponse.json({ success: true });
+    } catch (error: any) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+}

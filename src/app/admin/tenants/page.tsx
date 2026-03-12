@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import {
     Users, Crown, ArrowLeft, Loader2, Search,
-    ChevronDown, CheckCircle, AlertCircle, Smartphone
+    ChevronDown, CheckCircle, AlertCircle, Smartphone, Trash2
 } from 'lucide-react';
 
 interface Tenant {
@@ -52,6 +52,25 @@ export default function AdminTenantsPage() {
             }
         } catch { }
         finally { setSaving(null); }
+    };
+
+    const handleDeleteTenant = async (tenantId: string, tenantName: string) => {
+        if (!confirm(`PERINGATAN! Anda yakin ingin menghapus pelanggan "${tenantName}"? Semua data mereka (kontak, pesan, perangkat) akan DIBERSIHKAN PERMANEN dari database.`)) return;
+
+        setSaving(tenantId);
+        try {
+            const res = await fetch(`/api/admin/tenants?id=${tenantId}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (data.success) {
+                setTenants(prev => prev.filter(t => t.id !== tenantId));
+            } else {
+                alert('Gagal menghapus: ' + data.error);
+            }
+        } catch (error: any) {
+            alert('Terjadi kesalahan: ' + error.message);
+        } finally {
+            setSaving(null);
+        }
     };
 
     const filtered = tenants.filter(t => {
@@ -105,6 +124,7 @@ export default function AdminTenantsPage() {
                                 <th style={{ padding: 'var(--space-3) var(--space-4)', textAlign: 'center', fontWeight: 600, fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Device</th>
                                 <th style={{ padding: 'var(--space-3) var(--space-4)', textAlign: 'center', fontWeight: 600, fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Paket</th>
                                 <th style={{ padding: 'var(--space-3) var(--space-4)', textAlign: 'left', fontWeight: 600, fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Terdaftar</th>
+                                <th style={{ padding: 'var(--space-3) var(--space-4)', textAlign: 'center', fontWeight: 600, fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Aksi</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -140,6 +160,17 @@ export default function AdminTenantsPage() {
                                     </td>
                                     <td style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
                                         {new Date(t.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                    </td>
+                                    <td style={{ padding: 'var(--space-3) var(--space-4)', textAlign: 'center' }}>
+                                        <button 
+                                            className="btn btn-ghost btn-sm btn-icon" 
+                                            onClick={() => handleDeleteTenant(t.id, t.name)}
+                                            style={{ color: 'var(--color-danger)' }}
+                                            title="Hapus Pelanggan"
+                                            disabled={saving === t.id}
+                                        >
+                                            {saving === t.id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                                        </button>
                                     </td>
                                 </tr>
                             ))}

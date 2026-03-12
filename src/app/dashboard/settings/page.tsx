@@ -30,6 +30,7 @@ interface TeamMember {
     email: string | null;
     role: string;
     is_active: boolean;
+    assigned_devices?: string[];
 }
 
 type SettingsTab = 'profile' | 'subscription' | 'team' | 'webhook' | 'notifications';
@@ -65,8 +66,10 @@ export default function SettingsPage() {
     const [newName, setNewName] = useState('');
     const [newEmail, setNewEmail] = useState('');
     const [newRole, setNewRole] = useState('agent');
+    const [newAssignedDevices, setNewAssignedDevices] = useState<string[]>([]);
     const [teamSaving, setTeamSaving] = useState(false);
     const [teamError, setTeamError] = useState('');
+    const [devices, setDevices] = useState<any[]>([]);
 
     // Notifications
     const [notifPrefs, setNotifPrefs] = useState({
@@ -105,6 +108,12 @@ export default function SettingsPage() {
         fetch('/api/admin/settings')
             .then(r => r.json())
             .then(d => { if (d.success) setPlatformSettings(d.data); })
+            .catch(() => {});
+
+        // Fetch user's devices for team assignment
+        fetch('/api/devices')
+            .then(r => r.json())
+            .then(d => { if (d.success) setDevices(d.data); })
             .catch(() => {});
     }, []);
 
@@ -152,12 +161,12 @@ export default function SettingsPage() {
             const res = await fetch('/api/cs/agents', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: newName, email: newEmail, role: newRole }),
+                body: JSON.stringify({ name: newName, email: newEmail, role: newRole, assigned_devices: newAssignedDevices }),
             });
             const data = await res.json();
             if (!data.success) throw new Error(data.error);
             setTeamMembers(prev => [...prev, data.data]);
-            setNewName(''); setNewEmail(''); setNewRole('agent');
+            setNewName(''); setNewEmail(''); setNewRole('agent'); setNewAssignedDevices([]);
             setShowAddForm(false);
         } catch (err: any) { setTeamError(err.message); }
         finally { setTeamSaving(false); }
@@ -444,7 +453,7 @@ export default function SettingsPage() {
                                         }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
                                                 <h4 style={{ fontSize: 'var(--text-sm)', fontWeight: 600 }}>✨ Tambah Agen Baru</h4>
-                                                <button className="btn btn-ghost btn-icon btn-sm" onClick={() => { setShowAddForm(false); setTeamError(''); }}>
+                                                <button className="btn btn-ghost btn-icon btn-sm" onClick={() => { setShowAddForm(false); setTeamError(''); setNewAssignedDevices([]); }}>
                                                     <X size={16} />
                                                 </button>
                                             </div>
@@ -469,6 +478,27 @@ export default function SettingsPage() {
                                                         <option value="supervisor">Supervisor</option>
                                                         <option value="admin">Admin</option>
                                                     </select>
+                                                </div>
+                                            </div>
+                                            <div className="form-group" style={{ marginTop: 'var(--space-3)', marginBottom: 0 }}>
+                                                <label className="form-label">Tugaskan ke Nomor WhatsApp (Perangkat)</label>
+                                                <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 8, marginTop: -4 }}>Jika tidak ada yang dicentang, agen bisa melihat semua nomor.</p>
+                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                                                    {devices.length === 0 ? (
+                                                        <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>Belum ada perangkat terhubung.</span>
+                                                    ) : devices.map(dev => (
+                                                        <label key={dev.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, background: 'var(--color-bg-primary)', padding: '4px 8px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)' }}>
+                                                            <input 
+                                                                type="checkbox" 
+                                                                checked={newAssignedDevices.includes(dev.id)}
+                                                                onChange={e => {
+                                                                    if (e.target.checked) setNewAssignedDevices([...newAssignedDevices, dev.id]);
+                                                                    else setNewAssignedDevices(newAssignedDevices.filter(id => id !== dev.id));
+                                                                }}
+                                                            />
+                                                            {dev.name} ({dev.phone_number})
+                                                        </label>
+                                                    ))}
                                                 </div>
                                             </div>
                                             <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end', marginTop: 'var(--space-3)' }}>
@@ -516,6 +546,15 @@ export default function SettingsPage() {
                                                             <span className={`badge ${member.is_active ? 'badge-success' : 'badge-default'}`}>
                                                                 {member.is_active ? 'Aktif' : 'Nonaktif'}
                                                             </span>
+                                                            {(member.assigned_devices && member.assigned_devices.length > 0) ? (
+                                                                <span className="badge badge-info" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                                    <Phone size={10} /> {member.assigned_devices.length} Perangkat
+                                                                </span>
+                                                            ) : (
+                                                                <span className="badge badge-default" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                                    <Globe size={10} /> Semua Akses
+                                                                </span>
+                                                            )}
                                                         </div>
                                                         {member.email && (
                                                             <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginTop: 2 }}>

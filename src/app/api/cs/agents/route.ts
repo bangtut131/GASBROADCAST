@@ -40,6 +40,7 @@ export async function GET(request: NextRequest) {
             email: p.email || '',
             role: p.role || 'agent',
             is_active: p.is_active !== false,
+            assigned_devices: [],
         }));
         return NextResponse.json({ success: true, data: agents });
     } catch (error: any) {
@@ -61,7 +62,7 @@ export async function POST(request: NextRequest) {
             .single();
         if (!profile) return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
 
-        const { name, email, role } = await request.json();
+        const { name, email, role, assigned_devices } = await request.json();
         if (!name) return NextResponse.json({ error: 'Nama wajib diisi' }, { status: 400 });
 
         const { data, error } = await supabase
@@ -72,6 +73,7 @@ export async function POST(request: NextRequest) {
                 email: email || null,
                 role: role || 'agent',
                 is_active: true,
+                assigned_devices: assigned_devices || [],
             })
             .select()
             .single();
@@ -90,10 +92,15 @@ export async function PATCH(request: NextRequest) {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-        const { id, is_active } = await request.json();
+        const { id, is_active, assigned_devices } = await request.json();
+        
+        let updates: any = {};
+        if (is_active !== undefined) updates.is_active = is_active;
+        if (assigned_devices !== undefined) updates.assigned_devices = assigned_devices;
+
         const { error } = await supabase
             .from('team_members')
-            .update({ is_active })
+            .update(updates)
             .eq('id', id);
 
         if (error) throw error;

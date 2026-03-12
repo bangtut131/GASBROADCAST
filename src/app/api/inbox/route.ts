@@ -8,20 +8,42 @@ export async function GET(request: NextRequest) {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+        // Get user role & assigned devices
+        let assignedDevices: string[] = [];
+        const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+        if (profile && (profile.role === 'agent' || profile.role === 'supervisor') && user.email) {
+            const { data: member } = await supabase.from('team_members').select('assigned_devices').eq('email', user.email).single();
+            if (member && member.assigned_devices && member.assigned_devices.length > 0) {
+                assignedDevices = member.assigned_devices;
+            }
+        }
+
         // Get latest message per phone
-        const { data: messages, error } = await supabase
+        let query = supabase
             .from('messages')
             .select('*, contact:contacts(name, phone), device:devices(name)')
             .order('created_at', { ascending: false });
+            
+        if (assignedDevices.length > 0) {
+            query = query.in('device_id', assignedDevices);
+        }
+
+        const { data: messages, error } = await query;
 
         if (error) throw error;
 
         // Get unread counts by phone for inbound messages
-        const { data: unreadCounts } = await supabase
+        let unreadQuery = supabase
             .from('messages')
             .select('phone')
             .eq('direction', 'inbound')
             .eq('is_read', false);
+            
+        if (assignedDevices.length > 0) {
+            unreadQuery = unreadQuery.in('device_id', assignedDevices);
+        }
+
+        const { data: unreadCounts } = await unreadQuery;
             
         const unreadMap = new Map<string, number>();
         (unreadCounts || []).forEach(m => {

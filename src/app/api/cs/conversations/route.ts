@@ -8,12 +8,28 @@ export async function GET(request: NextRequest) {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-        // Get latest message per phone with CS assignment from contacts
-        const { data: messages } = await supabase
+        // Get user role & assigned devices
+        let assignedDevices: string[] = [];
+        const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+        if (profile && (profile.role === 'agent' || profile.role === 'supervisor') && user.email) {
+            const { data: member } = await supabase.from('team_members').select('assigned_devices').eq('email', user.email).single();
+            if (member && member.assigned_devices && member.assigned_devices.length > 0) {
+                assignedDevices = member.assigned_devices;
+            }
+        }
+
+        let query = supabase
             .from('messages')
             .select('*, contact:contacts(name, cs_assigned_to, cs_status), device:devices(name)')
             .eq('direction', 'inbound')
             .order('created_at', { ascending: false });
+            
+        if (assignedDevices.length > 0) {
+            query = query.in('device_id', assignedDevices);
+        }
+
+        // Get latest message per phone with CS assignment from contacts
+        const { data: messages } = await query;
 
         const seen = new Set<string>();
         const conversations = (messages || [])
