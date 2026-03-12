@@ -285,18 +285,19 @@ export async function createSession(sessionId) {
             
             // If it's an @lid, try to resolve to real JID
             if (from.endsWith('@lid')) {
-                // DEBUG LOG TO INSPECT FULL PAYLOAD
-                console.log(`\n\n=== [DEBUG] FULL LID MSG RECEIVED ===`);
-                console.log(JSON.stringify(msg, null, 2));
-                console.log(`=== END DEBUG ===\n\n`);
-
-                const resolved = lidStore.get(from);
-                if (resolved) {
-                    console.log(`[${sessionId}] Resolved LID ${from} -> ${resolved}`);
-                    fromJid = resolved;
-                } else if (msg.participant || msg.key.participant) {
-                    // Fallback to participant if available
-                    fromJid = msg.participant || msg.key.participant;
+                // Multi-Device often sends the true phone number in `key.senderPn`
+                if (msg.key && msg.key.senderPn) {
+                    console.log(`[${sessionId}] Resolved LID ${from} from senderPn -> ${msg.key.senderPn}`);
+                    fromJid = msg.key.senderPn;
+                } else {
+                    const resolved = lidStore.get(from);
+                    if (resolved) {
+                        console.log(`[${sessionId}] Resolved LID ${from} from lidStore -> ${resolved}`);
+                        fromJid = resolved;
+                    } else if (msg.participant || msg.key.participant) {
+                        // Fallback to participant if available
+                        fromJid = msg.participant || msg.key.participant;
+                    }
                 }
             }
 
