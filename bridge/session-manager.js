@@ -85,6 +85,16 @@ export async function createSession(sessionId) {
     };
     sessions.set(sessionId, sessionData);
 
+    // In-memory store for message retry (required for Signal Protocol session renegotiation)
+    // Without this, only the first message per contact can be decrypted
+    const msgRetryCounterMap = new Map();
+    const msgRetryCounterCache = {
+        get: (key) => msgRetryCounterMap.get(key) || 0,
+        set: (key, val) => msgRetryCounterMap.set(key, val),
+    };
+    // Message store for getMessage — needed to reply to retry requests from contacts
+    const messageStore = new Map();
+
     let sock;
     try {
         sock = makeWASocket({
@@ -99,8 +109,14 @@ export async function createSession(sessionId) {
             retryRequestDelayMs: 2000,
             syncFullHistory: false,
             markOnlineOnConnect: false,
-            // Enable contact sync so we can collect device contacts for WA Status
             shouldSyncHistoryMessage: () => true,
+            // Required for Signal Protocol session renegotiation (fixes "Bad MAC" / only 1 message per session)
+            msgRetryCounterCache,
+            getMessage: async (key) => {
+                // Return stored message or a placeholder so Baileys can retry decryption
+                const stored = messageStore.get(`${key.remoteJid}:${key.id}`);
+                return stored || { conversation: '' };
+            },
         });
     } catch (e) {
         console.error(`[${sessionId}] Socket creation failed:`, e.message);
@@ -168,6 +184,13 @@ export async function createSession(sessionId) {
     });
 
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
+        // Store ALL messages for getMessage retry support (needed for Signal Protocol renegotiation)
+        for (const msg of messages) {
+            if (msg.message && msg.key?.remoteJid && msg.key?.id) {
+                messageStore.set(`${msg.key.remoteJid}:${msg.key.id}`, msg.message);
+            }
+        }
+
         if (type !== 'notify') return;
         for (const msg of messages) {
             if (msg.key.fromMe) continue;
