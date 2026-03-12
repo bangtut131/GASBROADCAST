@@ -92,15 +92,15 @@ export default function InboxPage() {
         return () => { supabase.removeChannel(channel); };
     }, [selectedPhone, supabase, loadConversations]);
 
-    // ====== Polling fallback (5s conversations, 3s messages) ======
+    // ====== Polling fallback (3s conversations, 1.5s messages) ======
     useEffect(() => {
-        const convTimer = setInterval(() => loadConversations(), 5000);
+        const convTimer = setInterval(() => loadConversations(), 3000);
         return () => clearInterval(convTimer);
     }, [loadConversations]);
 
     useEffect(() => {
         if (!selectedPhone) return;
-        const msgTimer = setInterval(() => loadMessages(selectedPhone), 3000);
+        const msgTimer = setInterval(() => loadMessages(selectedPhone), 1500);
         return () => clearInterval(msgTimer);
     }, [selectedPhone, loadMessages]);
 
