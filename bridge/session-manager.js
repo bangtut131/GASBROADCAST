@@ -285,6 +285,11 @@ export async function createSession(sessionId) {
             
             // If it's an @lid, try to resolve to real JID
             if (from.endsWith('@lid')) {
+                // DEBUG LOG TO INSPECT FULL PAYLOAD
+                console.log(`\n\n=== [DEBUG] FULL LID MSG RECEIVED ===`);
+                console.log(JSON.stringify(msg, null, 2));
+                console.log(`=== END DEBUG ===\n\n`);
+
                 const resolved = lidStore.get(from);
                 if (resolved) {
                     console.log(`[${sessionId}] Resolved LID ${from} -> ${resolved}`);
