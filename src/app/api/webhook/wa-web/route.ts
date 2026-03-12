@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/server';
 
 /**
  * Webhook handler for GAS Smart Broadcast Baileys Bridge (wa-web provider)
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
 
         console.log(`[Webhook wa-web] event=${event} sessionId=${sessionId}`);
 
-        const supabase = await createClient();
+        const supabase = await createServiceClient();
 
         /**
          * Find the device using multiple strategies:
