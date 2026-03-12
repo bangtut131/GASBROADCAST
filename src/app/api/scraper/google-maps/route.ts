@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { scrapeGoogleMaps } from '@/lib/scraper/google-maps';
 
+// Extend timeout to 5 minutes for scraping
+export const maxDuration = 300;
+
 // POST /api/scraper/google-maps — Run scraper
 export async function POST(request: NextRequest) {
     try {

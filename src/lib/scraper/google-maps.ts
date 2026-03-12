@@ -205,8 +205,10 @@ export async function scrapeGoogleMaps(
             return items;
         }, maxResults);
 
-        // Visit detail pages for missing phone numbers (max 10)
-        const needPhone = results.filter(r => !r.phone && r.placeUrl).slice(0, 10);
+        // Visit detail pages for missing phone numbers
+        // Limit visits: fewer for large scrapes to avoid timeout
+        const maxDetailVisits = maxResults > 60 ? 5 : 10;
+        const needPhone = results.filter(r => !r.phone && r.placeUrl).slice(0, maxDetailVisits);
         for (const biz of needPhone) {
             try {
                 await page.goto(biz.placeUrl, { waitUntil: 'networkidle2', timeout: 15000 });
