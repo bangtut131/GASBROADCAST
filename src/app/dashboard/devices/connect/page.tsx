@@ -115,6 +115,28 @@ export default function DeviceConnectPage() {
                 ? { apiUrl: bridgeUrl, apiKey: bridgeApiSecret }
                 : { accessToken: officialAccessToken, phoneNumberId: officialPhoneId };
 
+        // Validate API URL format for WA Web and WAHA
+        if (provider === 'wa-web' || provider === 'waha') {
+            const tempUrl = (providerConfig as any).apiUrl?.trim() || '';
+            if (!tempUrl) {
+                setError('API URL tidak boleh kosong');
+                setLoading(false);
+                return;
+            }
+            if (!tempUrl.startsWith('http://') && !tempUrl.startsWith('https://')) {
+                setError('API URL harus diawali dengan http:// atau https://');
+                setLoading(false);
+                return;
+            }
+            try {
+                new URL(tempUrl);
+            } catch (err) {
+                setError('Format API URL tidak valid');
+                setLoading(false);
+                return;
+            }
+        }
+
         try {
             const res = await fetch('/api/devices', {
                 method: 'POST',
