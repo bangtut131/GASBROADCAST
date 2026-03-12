@@ -191,6 +191,9 @@ export async function createSession(sessionId) {
             }
         }
 
+        // Log ALL events including non-notify types for debugging
+        console.log(`[${sessionId}] messages.upsert type=${type} count=${messages.length} fromMe=${messages[0]?.key?.fromMe} from=${messages[0]?.key?.remoteJid}`);
+
         if (type !== 'notify') return;
         for (const msg of messages) {
             if (msg.key.fromMe) continue;

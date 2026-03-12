@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient } from '@/lib/supabase/server';
 
 // GET /api/admin/tenants — List all tenants with usage stats
 export async function GET(request: NextRequest) {
@@ -17,8 +17,11 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
+        // Use service client to bypass RLS — owner needs to see ALL tenants
+        const serviceSupabase = await createServiceClient();
+
         // Fetch all tenants
-        const { data: tenants, error } = await supabase
+        const { data: tenants, error } = await serviceSupabase
             .from('tenants')
             .select('*')
             .order('created_at', { ascending: false });
@@ -26,12 +29,12 @@ export async function GET(request: NextRequest) {
         if (error) throw error;
 
         // Get device counts per tenant
-        const { data: deviceCounts } = await supabase
+        const { data: deviceCounts } = await serviceSupabase
             .from('devices')
             .select('tenant_id');
 
         // Get user/profile info per tenant
-        const { data: profiles } = await supabase
+        const { data: profiles } = await serviceSupabase
             .from('profiles')
             .select('tenant_id, full_name, role');
 
@@ -80,7 +83,8 @@ export async function PATCH(request: NextRequest) {
             return NextResponse.json({ error: 'Invalid plan' }, { status: 400 });
         }
 
-        const { error } = await supabase
+        const serviceSupabase = await createServiceClient();
+        const { error } = await serviceSupabase
             .from('tenants')
             .update({ plan })
             .eq('id', tenant_id);
