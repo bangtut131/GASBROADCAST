@@ -121,6 +121,34 @@ export async function createSession(sessionId) {
         },
     };
 
+    // ==================== Persistent LID Mapping Store ====================
+    // Maps @lid to @s.whatsapp.net so we can identify senders of multi-device messages
+    const lidStorePath = join(sessionDir, 'lid-store.json');
+    let lidObj = {};
+    try {
+        if (existsSync(lidStorePath)) {
+            lidObj = JSON.parse(readFileSync(lidStorePath, 'utf8'));
+            console.log(`[${sessionId}] Loaded ${Object.keys(lidObj).length} LID mappings from disk`);
+        }
+    } catch (e) { lidObj = {}; }
+
+    let lidSaveTimer = null;
+    const scheduleLidSave = () => {
+        if (lidSaveTimer) clearTimeout(lidSaveTimer);
+        lidSaveTimer = setTimeout(() => {
+            try { writeFileSync(lidStorePath, JSON.stringify(lidObj), 'utf8'); } catch { }
+        }, 2000);
+    };
+
+    const lidStore = {
+        get: (lid) => lidObj[lid] || null,
+        set: (lid, jid) => {
+            if (lidObj[lid] === jid) return;
+            lidObj[lid] = jid;
+            scheduleLidSave();
+        },
+    };
+
     // In-memory store for message retry (required for Signal Protocol session renegotiation)
     // Without this, only the first message per contact can be decrypted
     const msgRetryCounterMap = new Map();
@@ -252,13 +280,27 @@ export async function createSession(sessionId) {
                 m?.templateButtonReplyMessage?.selectedDisplayText ||
                 '';
 
-            // Clean phone number — strip both @s.whatsapp.net and @lid
-            const phone = from
+            // Clean phone number
+            let fromJid = from;
+            
+            // If it's an @lid, try to resolve to real JID
+            if (from.endsWith('@lid')) {
+                const resolved = lidStore.get(from);
+                if (resolved) {
+                    console.log(`[${sessionId}] Resolved LID ${from} -> ${resolved}`);
+                    fromJid = resolved;
+                } else if (msg.participant || msg.key.participant) {
+                    // Fallback to participant if available
+                    fromJid = msg.participant || msg.key.participant;
+                }
+            }
+
+            const phone = fromJid
                 .replace('@s.whatsapp.net', '')
                 .replace('@lid', '')
                 .trim();
 
-            console.log(`[${sessionId}] 📨 Message from ${phone}: "${body.substring(0, 60)}" type=${type}`);
+            console.log(`[${sessionId}] 📨 Message from ${phone} (raw: ${from}): "${body.substring(0, 60)}" type=${type}`);
 
             await sendWebhook(sessionId, 'message.received', {
                 sessionId,
@@ -280,6 +322,10 @@ export async function createSession(sessionId) {
             if (contact.id && contact.id.endsWith('@s.whatsapp.net')) {
                 sessionData.deviceContacts.add(contact.id);
             }
+            // Map LID to JID if both are present in the contact
+            const cLid = contact.lid || (contact.id?.endsWith('@lid') ? contact.id : null);
+            const cJid = contact.id?.endsWith('@s.whatsapp.net') ? contact.id : null;
+            if (cLid && cJid) lidStore.set(cLid, cJid);
         }
         console.log(`[${sessionId}] contacts.upsert: ${sessionData.deviceContacts.size} total device contacts`);
     });
@@ -289,6 +335,9 @@ export async function createSession(sessionId) {
             if (contact.id && contact.id.endsWith('@s.whatsapp.net')) {
                 sessionData.deviceContacts.add(contact.id);
             }
+            const cLid = contact.lid || (contact.id?.endsWith('@lid') ? contact.id : null);
+            const cJid = contact.id?.endsWith('@s.whatsapp.net') ? contact.id : null;
+            if (cLid && cJid) lidStore.set(cLid, cJid);
         }
         console.log(`[${sessionId}] contacts.update: ${sessionData.deviceContacts.size} total device contacts`);
     });
