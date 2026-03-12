@@ -26,17 +26,26 @@ export async function POST(request: NextRequest) {
 
         const supabase = await createClient();
 
-        // Helper: find device by session_id first, then by phone_number as fallback
+        /**
+         * Find the device using multiple strategies:
+         * 1. Exact session_id match
+         * 2. Match by phone_number
+         * 3. Match by any wa-web device (for fresh registrations where phone_number is still null)
+         * Once found, auto-update session_id so future lookups work.
+         */
         async function findDevice(sid: string, phoneNumber?: string) {
-            // Try by session_id
+            // Strategy 1: exact session_id match
             const { data: bySession } = await supabase
                 .from('devices')
                 .select('id, tenant_id, session_id, phone_number')
                 .eq('session_id', sid)
                 .maybeSingle();
-            if (bySession) return bySession;
+            if (bySession) {
+                console.log(`[Webhook wa-web] Device found by session_id`);
+                return bySession;
+            }
 
-            // Fallback: try by phone_number if provided
+            // Strategy 2: match by phone_number
             if (phoneNumber) {
                 const cleaned = phoneNumber.replace(/\D/g, '');
                 const { data: byPhone } = await supabase
@@ -45,35 +54,49 @@ export async function POST(request: NextRequest) {
                     .eq('phone_number', cleaned)
                     .maybeSingle();
                 if (byPhone) {
-                    console.log(`[Webhook wa-web] Found device by phone_number=${cleaned}, updating session_id`);
-                    // Update session_id to match current bridge session
-                    await supabase
-                        .from('devices')
-                        .update({ session_id: sid })
-                        .eq('id', byPhone.id);
+                    console.log(`[Webhook wa-web] Device found by phone_number=${cleaned}, updating session_id`);
+                    await supabase.from('devices').update({ session_id: sid }).eq('id', byPhone.id);
                     return byPhone;
                 }
             }
+
+            // Strategy 3: find any wa-web device (covers first-time connect where phone_number is still null)
+            // Pick the most recently created wa-web device
+            const { data: waWebDevices } = await supabase
+                .from('devices')
+                .select('id, tenant_id, session_id, phone_number')
+                .eq('provider', 'wa-web')
+                .order('created_at', { ascending: false })
+                .limit(1);
+
+            if (waWebDevices && waWebDevices.length > 0) {
+                const device = waWebDevices[0];
+                console.log(`[Webhook wa-web] Device found by provider=wa-web fallback, id=${device.id}, updating session_id`);
+                await supabase.from('devices').update({ session_id: sid }).eq('id', device.id);
+                return device;
+            }
+
             return null;
         }
 
-        // session.connected — update device status in DB
+        // ── session.connected ──────────────────────────────────────
         if (event === 'session.connected') {
             const phoneNumber = data?.phoneNumber;
             const device = await findDevice(sessionId, phoneNumber);
             if (device) {
+                const cleaned = phoneNumber?.replace(/\D/g, '') || null;
                 await supabase
                     .from('devices')
-                    .update({ status: 'connected', phone_number: phoneNumber || null, session_id: sessionId })
+                    .update({ status: 'connected', phone_number: cleaned, session_id: sessionId })
                     .eq('id', device.id);
-                console.log(`[Webhook wa-web] session.connected — device id=${device.id} updated`);
+                console.log(`[Webhook wa-web] ✅ session.connected — device id=${device.id} updated, phone=${cleaned}`);
             } else {
-                console.warn(`[Webhook wa-web] session.connected — no device found for sessionId=${sessionId}, phone=${phoneNumber}`);
+                console.error(`[Webhook wa-web] ❌ No wa-web device found at all for phone=${phoneNumber}`);
             }
             return NextResponse.json({ success: true });
         }
 
-        // session.disconnected
+        // ── session.disconnected ───────────────────────────────────
         if (event === 'session.disconnected') {
             await supabase
                 .from('devices')
@@ -82,7 +105,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ success: true });
         }
 
-        // message.received — save to messages table
+        // ── message.received ───────────────────────────────────────
         if (event === 'message.received') {
             const payload = data?.payload;
             console.log('[Webhook wa-web] message payload:', JSON.stringify(payload));
@@ -94,7 +117,7 @@ export async function POST(request: NextRequest) {
 
             const device = await findDevice(sessionId);
             if (!device) {
-                console.error(`[Webhook wa-web] Device not found for session_id="${sessionId}"`);
+                console.error(`[Webhook wa-web] ❌ No device found for session_id="${sessionId}"`);
                 return NextResponse.json({ success: false, error: 'device_not_found' });
             }
 
@@ -123,7 +146,7 @@ export async function POST(request: NextRequest) {
             if (msgError) {
                 console.error('[Webhook wa-web] Message insert error:', msgError.message);
             } else {
-                console.log(`[Webhook wa-web] ✅ Message saved from ${phone}`);
+                console.log(`[Webhook wa-web] ✅ Message saved from ${phone}: "${payload.body.substring(0, 50)}"`);
             }
 
             return NextResponse.json({ success: true });
