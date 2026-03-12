@@ -92,6 +92,19 @@ export default function InboxPage() {
         return () => { supabase.removeChannel(channel); };
     }, [selectedPhone, supabase, loadConversations]);
 
+    // ====== Polling fallback (5s conversations, 3s messages) ======
+    useEffect(() => {
+        const convTimer = setInterval(() => loadConversations(), 5000);
+        return () => clearInterval(convTimer);
+    }, [loadConversations]);
+
+    useEffect(() => {
+        if (!selectedPhone) return;
+        const msgTimer = setInterval(() => loadMessages(selectedPhone), 3000);
+        return () => clearInterval(msgTimer);
+    }, [selectedPhone, loadMessages]);
+
+
     const handleSend = async () => {
         if (!newMessage.trim() || !selectedPhone || sending) return;
         setSending(true);

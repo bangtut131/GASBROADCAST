@@ -29,10 +29,10 @@ export async function POST(request: NextRequest) {
         if (!result.success) throw new Error(result.error);
 
         // Save to messages table
-        const { data: profile } = await supabase.from('profiles').select('tenant_id').eq('id', user.id).single();
-        const { data: contact } = await supabase.from('contacts').select('id').eq('phone', phone).single();
+        const { data: profile } = await supabase.from('profiles').select('tenant_id').eq('id', user.id).maybeSingle();
+        const { data: contact } = await supabase.from('contacts').select('id').eq('phone', phone).maybeSingle();
 
-        await supabase.from('messages').insert({
+        const { error: msgErr } = await supabase.from('messages').insert({
             tenant_id: profile?.tenant_id,
             device_id: device.id,
             contact_id: contact?.id || null,
@@ -42,6 +42,7 @@ export async function POST(request: NextRequest) {
             content: message,
             is_from_bot: false,
         });
+        if (msgErr) console.error('[Inbox Send] Message insert error:', msgErr.message);
 
         return NextResponse.json({ success: true });
     } catch (error: any) {
