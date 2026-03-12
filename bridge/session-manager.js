@@ -233,8 +233,7 @@ export async function createSession(sessionId) {
             if (msg.key.fromMe) continue;
             const from = msg.key.remoteJid;
             if (!from || from.endsWith('@g.us')) continue;
-            // Skip @lid (Linked Device IDs) — these are internal WhatsApp messages, not real users
-            if (from.endsWith('@lid')) continue;
+            // Allow @lid (Linked Device IDs) because Multi-Device uses this for subsequent messages
 
             // Extract body — handle all known message types including nested wrappers
             const m = msg.message;
