@@ -67,8 +67,21 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'No content available to post' }, { status: 400 });
         }
 
+        // Pick caption template from array or fallback
+        let selectedTemplate = schedule.caption_template || '';
+        if (schedule.caption_templates && schedule.caption_templates.length > 0) {
+            const templates = schedule.caption_templates;
+            if (schedule.mode === 'sequence' || schedule.mode === 'manual') {
+                const idx = (schedule.sequence_index || 0) % templates.length;
+                selectedTemplate = templates[idx];
+            } else {
+                // Random mode
+                selectedTemplate = templates[Math.floor(Math.random() * templates.length)];
+            }
+        }
+
         // Build caption with variables
-        const caption = buildCaption(content.caption || schedule.caption_template || '', content);
+        const caption = buildCaption(content.caption || selectedTemplate || '', content, selectedTemplate);
 
         // Post to ALL connected devices
         const results: { device_id: string; device_name: string; success: boolean; error?: string }[] = [];
@@ -267,7 +280,7 @@ async function pickContent(supabase: any, schedule: any) {
     return eligible[Math.floor(Math.random() * eligible.length)];
 }
 
-function buildCaption(template: string, content: any): string {
+function buildCaption(template: string, content: any, scheduleTemplate?: string): string {
     const now = new Date();
     
     // Determine sapaan based on hour
@@ -287,8 +300,14 @@ function buildCaption(template: string, content: any): string {
         sapaan: sapaan,
     };
 
+    // If a scheduleTemplate is explicitly passed (and it contains {caption}), we should base the replacement on scheduleTemplate
+    // Otherwise, we just replace `template` (which might be the raw content.caption if schedule template is empty).
+    const baseTemplate = (scheduleTemplate && scheduleTemplate.includes('{caption}')) 
+                            ? scheduleTemplate 
+                            : template;
+
     return Object.entries(vars).reduce(
         (str, [key, val]) => str.replace(new RegExp(`\\{${key}\\}`, 'g'), val),
-        template
+        baseTemplate
     );
 }

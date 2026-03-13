@@ -12,7 +12,7 @@ import {
 interface Category { id: string; name: string; color: string; icon: string; content_count: number }
 interface Content { id: string; type: 'image' | 'video' | 'text'; title: string | null; content_url: string | null; caption: string | null; category_id: string | null; category?: Category; tags: string[]; use_count: number; last_used_at: string | null; created_at: string }
 interface Device { id: string; name: string; phone_number: string | null; status: string }
-interface Schedule { id: string; name: string; device_id: string; device?: Device; device_ids?: string[]; devices?: Device[]; mode: string; times_of_day: string[]; days_of_week: number[]; category_ids: string[]; content_ids: string[]; window_start: string; window_end: string; cooldown_days: number; caption_template: string | null; is_active: boolean; last_posted_at: string | null; total_posted: number }
+interface Schedule { id: string; name: string; device_id: string; device?: Device; device_ids?: string[]; devices?: Device[]; mode: string; times_of_day: string[]; days_of_week: number[]; category_ids: string[]; content_ids: string[]; window_start: string; window_end: string; cooldown_days: number; caption_template: string | null; caption_templates: string[]; is_active: boolean; last_posted_at: string | null; total_posted: number }
 interface Log { id: string; content_id: string; schedule_id: string; device?: Device; status: string; error_message: string | null; posted_at: string }
 
 type ActiveTab = 'library' | 'schedules' | 'history';
@@ -53,7 +53,7 @@ export default function WAStatusPage() {
         times_of_day: ['08:00', '12:00', '18:00'],
         days_of_week: [0, 1, 2, 3, 4, 5, 6],
         window_start: '07:00', window_end: '21:00',
-        cooldown_days: 3, caption_template: '',
+        cooldown_days: 3, caption_template: '', caption_templates: [''] as string[],
     });
     const [saving, setSaving] = useState(false);
 
@@ -209,6 +209,7 @@ export default function WAStatusPage() {
             window_end: s.window_end,
             cooldown_days: s.cooldown_days,
             caption_template: s.caption_template || '',
+            caption_templates: s.caption_templates?.length > 0 ? [...s.caption_templates] : [s.caption_template || ''],
         });
         setShowAddSchedule(true);
     };
@@ -244,6 +245,10 @@ export default function WAStatusPage() {
     const addTime = () => setSchedForm(f => ({ ...f, times_of_day: [...f.times_of_day, '12:00'] }));
     const removeTime = (i: number) => setSchedForm(f => ({ ...f, times_of_day: f.times_of_day.filter((_, idx) => idx !== i) }));
     const updateTime = (i: number, val: string) => setSchedForm(f => ({ ...f, times_of_day: f.times_of_day.map((t, idx) => idx === i ? val : t) }));
+
+    const addCaption = () => setSchedForm(f => ({ ...f, caption_templates: [...f.caption_templates, ''] }));
+    const removeCaption = (i: number) => setSchedForm(f => ({ ...f, caption_templates: f.caption_templates.filter((_, idx) => idx !== i) }));
+    const updateCaption = (i: number, val: string) => setSchedForm(f => ({ ...f, caption_templates: f.caption_templates.map((c, idx) => idx === i ? val : c) }));
 
     const typeIcon = (type: string) => type === 'image' ? <Image size={14} /> : type === 'video' ? <Video size={14} /> : <FileText size={14} />;
     const modeIcon = (mode: string) => mode === 'random' ? <Shuffle size={14} /> : mode === 'sequence' ? <List size={14} /> : <Play size={14} />;
@@ -759,9 +764,42 @@ export default function WAStatusPage() {
                             </div>
 
                             <div className="form-group">
-                                <label className="form-label">Template Caption (opsional)</label>
-                                <input className="form-input" placeholder="Selamat pagi {hari}! — {tanggal} 🌅\n\n{caption}" value={schedForm.caption_template} onChange={e => setSchedForm(f => ({ ...f, caption_template: e.target.value }))} />
-                                <span className="form-hint">Override caption konten. Variabel: {'{sapaan}'}, {'{hari}'}, {'{tanggal}'}, {'{jam}'}, {'{judul}'}, {'{caption}'}</span>
+                                <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                    <span>Template Caption (opsional)</span>
+                                    {schedForm.caption_templates.length > 1 && (
+                                        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-accent)', fontWeight: 400 }}>
+                                            ✨ {schedForm.caption_templates.length} Variasi Caption
+                                        </span>
+                                    )}
+                                </label>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                                    {schedForm.caption_templates.map((c, i) => (
+                                        <div key={i} style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'flex-start' }}>
+                                            <div style={{ flex: 1, position: 'relative' }}>
+                                                <textarea 
+                                                    className="form-input" 
+                                                    style={{ minHeight: 60, paddingRight: 32, resize: 'vertical' }}
+                                                    placeholder="Selamat pagi {hari}! — {tanggal} 🌅\n\n{caption}" 
+                                                    value={c} 
+                                                    onChange={e => updateCaption(i, e.target.value)} 
+                                                />
+                                                <div style={{ position: 'absolute', top: 8, right: 8, fontSize: 10, color: 'var(--color-text-muted)', fontWeight: 600, userSelect: 'none' }}>
+                                                    #{i + 1}
+                                                </div>
+                                            </div>
+                                            {schedForm.caption_templates.length > 1 && (
+                                                <button type="button" className="btn btn-ghost btn-icon" style={{ color: 'var(--color-danger)', marginTop: 8 }} onClick={() => removeCaption(i)}>
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
+                                    <button type="button" className="btn btn-secondary btn-sm" style={{ alignSelf: 'flex-start' }} onClick={addCaption}>
+                                        <Plus size={14} /> Tambah Variasi Caption
+                                    </button>
+                                </div>
+                                <span className="form-hint" style={{ marginTop: 8 }}>Override caption konten. Variabel: {'{sapaan}'}, {'{hari}'}, {'{tanggal}'}, {'{jam}'}, {'{judul}'}, {'{caption}'}</span>
+                                <span className="form-hint">Jika mode <b>Random</b>, caption akan diambil acak. Jika mode <b>Kustom / Sequence</b>, caption ditarik berurutan (Round Robin).</span>
                             </div>
                         </div>
 
