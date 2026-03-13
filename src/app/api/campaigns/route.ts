@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { PLAN_LIMITS, hasReachedLimit, PlanType } from '@/lib/planLimits';
 
 // GET /api/campaigns — list campaigns
 export async function GET(request: NextRequest) {
@@ -33,6 +34,29 @@ export async function POST(request: NextRequest) {
             .eq('id', user.id)
             .single();
         if (!profile) return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
+
+        // Enforce Plan Limits
+        const { data: tenant } = await supabase
+            .from('tenants')
+            .select('plan')
+            .eq('id', profile.tenant_id)
+            .single();
+            
+        const plan = (tenant?.plan || 'free') as PlanType;
+        const limit = PLAN_LIMITS[plan].broadcasts;
+
+        if (limit !== -1) {
+            const { count } = await supabase
+                .from('campaigns')
+                .select('*', { count: 'exact', head: true })
+                .eq('tenant_id', profile.tenant_id);
+
+            if (hasReachedLimit(count || 0, limit)) {
+                return NextResponse.json({ 
+                    error: `Paket ${plan} maksimal dapat membuat ${limit} broadcast campaign. Silakan upgrade paket Anda.` 
+                }, { status: 403 });
+            }
+        }
 
         const body = await request.json();
         const {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { PLAN_LIMITS, hasReachedLimit, PlanType } from '@/lib/planLimits';
 
 // GET /api/cs/agents — List CS agents (from team_members)
 export async function GET(request: NextRequest) {
@@ -61,6 +62,29 @@ export async function POST(request: NextRequest) {
             .eq('id', user.id)
             .single();
         if (!profile) return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
+
+        // Enforce Plan Limits
+        const { data: tenant } = await supabase
+            .from('tenants')
+            .select('plan')
+            .eq('id', profile.tenant_id)
+            .single();
+            
+        const plan = (tenant?.plan || 'free') as PlanType;
+        const limit = PLAN_LIMITS[plan].team_members;
+
+        if (limit !== -1) {
+            const { count } = await supabase
+                .from('team_members')
+                .select('*', { count: 'exact', head: true })
+                .eq('tenant_id', profile.tenant_id);
+
+            if (hasReachedLimit(count || 0, limit)) {
+                return NextResponse.json({ 
+                    error: `Paket ${plan} maksimal memiliki ${limit} anggota tim. Silakan upgrade paket Anda.` 
+                }, { status: 403 });
+            }
+        }
 
         const { name, email, role, assigned_devices } = await request.json();
         if (!name) return NextResponse.json({ error: 'Nama wajib diisi' }, { status: 400 });

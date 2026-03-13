@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { PLAN_LIMITS, hasReachedLimit, PlanType } from '@/lib/planLimits';
 
 // GET /api/contacts — List contacts with pagination & search
 export async function GET(request: NextRequest) {
@@ -72,6 +73,39 @@ export async function POST(request: NextRequest) {
         let normalizedPhone = phone.replace(/\D/g, '');
         if (normalizedPhone.startsWith('08')) normalizedPhone = '62' + normalizedPhone.slice(1);
         if (normalizedPhone.startsWith('0')) normalizedPhone = '62' + normalizedPhone.slice(1);
+
+        // Check if contact already exists (upsert doesn't increase count if it exists)
+        const { data: existing } = await supabase
+            .from('contacts')
+            .select('id')
+            .eq('tenant_id', profile.tenant_id)
+            .eq('phone', normalizedPhone)
+            .single();
+
+        // Enforce Plan Limits (only if it's a new contact)
+        if (!existing) {
+            const { data: tenant } = await supabase
+                .from('tenants')
+                .select('plan')
+                .eq('id', profile.tenant_id)
+                .single();
+                
+            const plan = (tenant?.plan || 'free') as PlanType;
+            const limit = PLAN_LIMITS[plan].contacts;
+
+            if (limit !== -1) {
+                const { count } = await supabase
+                    .from('contacts')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('tenant_id', profile.tenant_id);
+
+                if (hasReachedLimit(count || 0, limit)) {
+                    return NextResponse.json({ 
+                        error: `Paket ${plan} maksimal memiliki ${limit} kontak. Silakan upgrade paket Anda.` 
+                    }, { status: 403 });
+                }
+            }
+        }
 
         const { data: contact, error } = await supabase
             .from('contacts')

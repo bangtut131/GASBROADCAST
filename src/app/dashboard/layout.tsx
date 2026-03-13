@@ -36,10 +36,13 @@ export default async function DashboardLayout({
     // Check if user is a platform superadmin
     const adminEmails = (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase());
     const isAdmin = !!(user.email && adminEmails.includes(user.email.toLowerCase()));
+    
+    // Get the plan (default 'free')
+    const plan = tenant?.plan || 'free';
 
     return (
         <div className="dashboard-layout">
-            <Sidebar isAdmin={isAdmin} />
+            <Sidebar isAdmin={isAdmin} plan={plan} />
             <div className="dashboard-main">
                 <Header profile={profile as Profile} tenant={tenant as Tenant} />
                 <main className="dashboard-content">

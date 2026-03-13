@@ -26,6 +26,7 @@ import s from './Sidebar.module.css';
 
 interface SidebarProps {
   isAdmin?: boolean;
+  plan?: string;
 }
 
 const navSections = [
@@ -64,7 +65,7 @@ const navSections = [
   },
 ];
 
-export default function Sidebar({ isAdmin }: SidebarProps) {
+export default function Sidebar({ isAdmin, plan = 'free' }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
 
@@ -85,21 +86,35 @@ export default function Sidebar({ isAdmin }: SidebarProps) {
 
       {/* Navigation */}
       <nav className={s.nav}>
-        {navSections.map((section, si) => (
-          <div className={s.section} key={si}>
-            {!collapsed && (
-              <div className={s.sectionTitle}>{section.title}</div>
-            )}
-            {collapsed && si > 0 && <div className={s.sectionDot} />}
-            {section.items.map((item) => {
-              const isActive = pathname === item.href ||
-                (item.href !== '/dashboard' && pathname.startsWith(item.href));
-              const isAdminPanel = item.href === '/admin';
-              if (isAdminPanel && !isAdmin) {
-                  return null;
+        {navSections.map((section, si) => {
+          // Filter section items based on plan
+          const filteredItems = section.items.filter(item => {
+              // Admin Panel logic
+              if (item.href === '/admin' && !isAdmin) return false;
+              
+              // Plan-based exclusions
+              if (plan === 'free') {
+                  if (item.label === 'Auto Reply') return false; // Exclude Auto Reply for Free
+                  if (item.label === 'Multi-CS') return false;   // Exclude Multi-CS for Free
               }
+              
+              return true;
+          });
 
-              return (
+          // Don't render empty sections
+          if (filteredItems.length === 0) return null;
+
+          return (
+            <div className={s.section} key={si}>
+              {!collapsed && (
+                <div className={s.sectionTitle}>{section.title}</div>
+              )}
+              {collapsed && si > 0 && <div className={s.sectionDot} />}
+              {filteredItems.map((item) => {
+                const isActive = pathname === item.href ||
+                  (item.href !== '/dashboard' && pathname.startsWith(item.href));
+
+                return (
                 <Link
                   key={item.href}
                   href={item.href}
@@ -117,10 +132,11 @@ export default function Sidebar({ isAdmin }: SidebarProps) {
                   )}
                   {isActive && <span className={s.indicator} />}
                 </Link>
-              );
-            })}
-          </div>
-        ))}
+                );
+              })}
+            </div>
+          );
+        })}
       </nav>
 
       {/* Upgrade Banner */}

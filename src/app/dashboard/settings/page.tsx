@@ -217,9 +217,13 @@ export default function SettingsPage() {
     const TABS = [
         { id: 'profile', label: '👤 Profil', icon: <User size={16} /> },
         { id: 'subscription', label: '💎 Langganan', icon: <CreditCard size={16} /> },
-        { id: 'team', label: '👥 Team', icon: <Users size={16} /> },
-        { id: 'webhook', label: '🔗 Webhook', icon: <Globe size={16} /> },
-        { id: 'notifications', label: '🔔 Notifikasi', icon: <Bell size={16} /> },
+        // Show Team only if plan is NOT free
+        ...(currentPlan !== 'free' ? [{ id: 'team', label: '👥 Team', icon: <Users size={16} /> } as const] : []),
+        // Show Webhook & Notifications only if plan is pro or enterprise
+        ...(currentPlan === 'pro' || currentPlan === 'enterprise' ? [
+            { id: 'webhook', label: '🔗 Webhook', icon: <Globe size={16} /> } as const,
+            { id: 'notifications', label: '🔔 Notifikasi', icon: <Bell size={16} /> } as const
+        ] : []),
     ] as const;
 
     return (
