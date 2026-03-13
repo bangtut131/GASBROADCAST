@@ -142,6 +142,15 @@ async function startBroadcast(supabase: any, campaign: any, tenantId: string) {
 
         if (targets.length === 0) return;
 
+        // Deduplicate Targets (Remove duplicates)
+        const uniqueTargetsMap = new Map();
+        for (const t of targets) {
+            if (t.phone && !uniqueTargetsMap.has(t.phone)) {
+                uniqueTargetsMap.set(t.phone, t);
+            }
+        }
+        targets = Array.from(uniqueTargetsMap.values());
+
         // Skip blacklisted phones
         const phonesToCheck = targets.map((t: any) => t.phone);
         const { data: blacklisted } = await supabase
