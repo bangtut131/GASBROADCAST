@@ -68,11 +68,16 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ id: s
             if (campData) setCampaign(campData);
 
             // Load messages
-            const { data: msgData } = await supabase
+            const { data: msgData, error } = await supabase
                 .from('broadcast_messages')
                 .select('*, contact:contacts(name)')
                 .eq('campaign_id', id)
-                .order('created_at', { ascending: true });
+                .order('phone', { ascending: true });
+                
+            if (error) {
+                console.error("Error loading messages:", error);
+            }
+                
             if (msgData) setMessages(msgData);
         } catch (err) {
             console.error(err);
@@ -139,7 +144,7 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ id: s
                         </div>
                         <div>
                             <div className="flex items-center gap-1 text-[var(--color-danger)] text-sm font-semibold">
-                                <XCircle size={14} /> Gagal
+                                <XCircle size={14} /> Gagal/Blokir
                             </div>
                             <div className="text-xl">{campaign.failed_count}</div>
                         </div>
@@ -201,7 +206,7 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ id: s
                                         {msg.sent_at ? new Date(msg.sent_at).toLocaleTimeString('id-ID') : '-'}
                                     </td>
                                     <td className="text-xs text-[var(--color-danger)] max-w-xs truncate" title={msg.error_message || ''}>
-                                        {msg.error_message || '-'}
+                                        {msg.error_message === 'BLACKLISTED' ? 'Diblokir Pengguna (Unsubscribe)' : (msg.error_message || '-')}
                                     </td>
                                 </tr>
                             ))}

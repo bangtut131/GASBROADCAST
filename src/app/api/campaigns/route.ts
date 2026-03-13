@@ -151,28 +151,35 @@ async function startBroadcast(supabase: any, campaign: any, tenantId: string) {
             .in('phone', phonesToCheck);
             
         const blacklistedPhones = new Set((blacklisted || []).map((b: any) => b.phone));
-        const filteredTargets = targets.filter((t: any) => !blacklistedPhones.has(t.phone));
 
-        if (filteredTargets.length === 0) {
-            // Update campaign status to completed if everyone is blacklisted
-            await supabase.from('campaigns').update({ status: 'completed', total_recipients: 0 }).eq('id', campaign.id);
-            return;
+        // Create broadcast_messages records (pending / failed for blacklisted)
+        let messages = [];
+        for (const t of targets) {
+            const isBlacklisted = blacklistedPhones.has(t.phone);
+            messages.push({
+                campaign_id: campaign.id,
+                contact_id: t.contact_id || null,
+                phone: t.phone,
+                status: isBlacklisted ? 'failed' : 'pending',
+                error_message: isBlacklisted ? 'BLACKLISTED' : null
+            });
         }
 
-        // Create broadcast_messages records (pending)
-        const messages = filteredTargets.map((t: any) => ({
-            campaign_id: campaign.id,
-            contact_id: t.contact_id || null,
-            phone: t.phone,
-            status: 'pending',
-        }));
+        if (messages.length === 0) return;
 
         await supabase.from('broadcast_messages').insert(messages);
 
-        // Update total_recipients
+        // Calculate actual failed vs total
+        const initialFailed = messages.filter(m => m.status === 'failed').length;
+
+        // Update total_recipients in campaigns
         await supabase
             .from('campaigns')
-            .update({ total_recipients: filteredTargets.length, status: 'running' })
+            .update({ 
+                total_recipients: targets.length, 
+                failed_count: initialFailed,
+                status: initialFailed === targets.length ? 'completed' : 'running'
+            })
             .eq('id', campaign.id);
     } catch (err) {
         console.error('startBroadcast error:', err);
