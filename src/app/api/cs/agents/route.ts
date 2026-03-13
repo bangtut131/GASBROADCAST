@@ -70,14 +70,19 @@ export async function POST(request: NextRequest) {
             // Need service client to bypass RLS to search all profiles
             const serviceSupabase = await createServiceClient();
             
-            // Check if user already exists in profiles
-            const { data: existingProfile } = await serviceSupabase
-                .from('profiles')
-                .select('id, tenant_id')
-                .eq('email', email)
-                .single();
+            // Check if user already exists in auth.users by email
+            const { data: usersData, error: usersErr } = await serviceSupabase.auth.admin.listUsers();
+            const existingAuthUser = usersData?.users?.find(u => u.email?.toLowerCase() === email.toLowerCase());
 
-            if (existingProfile) {
+            if (existingAuthUser && !usersErr) {
+                // User already registered! Find their profile to get old tenant
+                const { data: existingProfile } = await serviceSupabase
+                    .from('profiles')
+                    .select('id, tenant_id')
+                    .eq('id', existingAuthUser.id)
+                    .single();
+
+                if (existingProfile) {
                 // User already registered! Take over their account.
                 const oldTenantId = existingProfile.tenant_id;
                 
@@ -104,7 +109,8 @@ export async function POST(request: NextRequest) {
                         await serviceSupabase.from('tenants').delete().eq('id', oldTenantId);
                     }
                 }
-            }
+            } // END if(existingProfile)
+        } // END if(existingAuthUser)
         }
         // ----------------------------------------------
 
