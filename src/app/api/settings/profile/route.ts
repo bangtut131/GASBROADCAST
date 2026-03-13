@@ -9,11 +9,21 @@ export async function GET(request: NextRequest) {
 
         const { data: profile } = await supabase
             .from('profiles')
-            .select('*, tenant:tenants(id, name, plan, settings, webhook_token)')
+            .select('*')
             .eq('id', user.id)
             .single();
 
-        return NextResponse.json({ success: true, data: { ...profile, email: user.email } });
+        let tenant = null;
+        if (profile?.tenant_id) {
+            const { data } = await supabase
+                .from('tenants')
+                .select('id, name, plan, settings, webhook_token')
+                .eq('id', profile.tenant_id)
+                .single();
+            tenant = data;
+        }
+
+        return NextResponse.json({ success: true, data: { ...profile, tenant, email: user.email } });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
