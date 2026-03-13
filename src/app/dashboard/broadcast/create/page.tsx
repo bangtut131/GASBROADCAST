@@ -229,7 +229,7 @@ export default function CreateBroadcastPage() {
 
         try {
             const finalMessageTemplate = appendUnsubscribe 
-                ? messageTemplate + "\n\nBalas 'UNSUB' atau klik {unsubscribe_link} untuk berhenti menerima pesan."
+                ? messageTemplate + "\n\nKetik 'UNSUB' atau klik {unsubscribe_link} untuk berhenti langganan."
                 : messageTemplate;
 
             const res = await fetch('/api/campaigns', {
@@ -688,7 +688,7 @@ export default function CreateBroadcastPage() {
                                             ? (messageTemplate
                                                 .replace(/{greeting}/gi, useGreeting && greetings.length > 0 ? greetings[Math.floor(Math.random() * greetings.length)] : 'Halo')
                                                 .replace(/{name}/gi, 'Budi Santoso')
-                                                .replace(/{phone}/gi, '628123456789') + (appendUnsubscribe ? "\n\nBalas 'UNSUB' atau klik https://wa.example.com/api/web... untuk berhenti menerima pesan." : ""))
+                                                .replace(/{phone}/gi, '628123456789') + (appendUnsubscribe ? "\n\nKetik 'UNSUB' atau klik https://wa.example.com/u/x7Ab9 untuk berhenti langganan." : ""))
                                             : <span style={{ opacity: 0.6, fontStyle: 'italic' }}>Preview pesan akan tampil di sini...</span>
                                         }
                                     </div>

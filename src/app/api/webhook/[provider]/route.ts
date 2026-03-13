@@ -86,7 +86,29 @@ export async function POST(
                 wa_message_id: messageId,
             });
 
-            // Check auto-reply rules (ordered by priority desc)
+            const message = (messageBody || '').toLowerCase().trim();
+
+            // 1. Intercept Unsubscribe Request
+            if (message === 'unsub' || message === 'unsubscribe') {
+                await supabase.from('blacklisted_contacts').upsert(
+                    { tenant_id: device.tenant_id, phone, reason: 'unsubscribed via auto-reply keyword' },
+                    { onConflict: 'tenant_id,phone' }
+                );
+
+                const replyText = 'Pesan diterima. Nomor Anda telah berhasil dihapus dari daftar. Anda tidak akan menerima rentetan pesan promosi dari kami lagi.';
+
+                if (provider === 'waha') {
+                    const wahaProvider = new WAHAProvider(device.provider_config as { apiUrl?: string; apiKey?: string });
+                    await wahaProvider.sendText(device.session_id, phone, replyText);
+                } else {
+                    const officialProvider = new OfficialProvider(device.provider_config as { accessToken?: string; phoneNumberId?: string });
+                    await officialProvider.sendText(device.session_id, phone, replyText);
+                }
+
+                return NextResponse.json({ received: true, unsubscribed: true });
+            }
+
+            // 2. Check auto-reply rules (ordered by priority desc)
             const { data: rules } = await supabase
                 .from('autoreply_rules')
                 .select('*')
@@ -99,7 +121,6 @@ export async function POST(
                 return NextResponse.json({ received: true });
             }
 
-            const message = (messageBody || '').toLowerCase().trim();
             let matchedRule: typeof rules[0] | null = null;
 
             for (const rule of rules) {

@@ -77,7 +77,16 @@ async function processMessagesInBackground(ctx: { id: string, device: any, campa
                 ? greetingList[Math.floor(Math.random() * greetingList.length)]
                 : '';
 
-            const unsubscribe_link = `${process.env.NEXT_PUBLIC_APP_URL}/api/webhooks/unsubscribe/${device.tenant_id}/${Buffer.from(msg.phone).toString('base64')}`;
+            // Generate Short Link
+            const nanoid = Math.random().toString(36).substring(2, 8); // simple 6 char random string
+            const longUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/webhooks/unsubscribe/${device.tenant_id}/${Buffer.from(msg.phone).toString('base64')}`;
+            
+            await bgSupabase.from('short_links').insert({
+                id: nanoid,
+                target_url: longUrl
+            });
+
+            const unsubscribe_link = `${process.env.NEXT_PUBLIC_APP_URL}/u/${nanoid}`;
 
             const personalized = pMsg(campaign.message_template, {
                 name: contact?.name || '',
