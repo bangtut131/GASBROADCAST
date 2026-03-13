@@ -38,7 +38,7 @@ export default async function DashboardLayout({
     const isAdmin = !!(user.email && adminEmails.includes(user.email.toLowerCase()));
     
     // Get the plan (default 'free')
-    const plan = tenant?.plan || 'free';
+    const plan = (tenant?.plan || 'free').toLowerCase();
 
     return (
         <div className="dashboard-layout">

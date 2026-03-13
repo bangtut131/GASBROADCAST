@@ -211,7 +211,7 @@ export default function SettingsPage() {
         finally { setNotifSaving(false); }
     };
 
-    const currentPlan = profile?.tenant?.plan || 'free';
+    const currentPlan = (profile?.tenant?.plan || 'free').toLowerCase();
     const currentLimits = PLAN_LIMITS[currentPlan] || PLAN_LIMITS.free;
 
     const TABS = [
