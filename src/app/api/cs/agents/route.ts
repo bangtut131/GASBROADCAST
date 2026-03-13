@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient } from '@/lib/supabase/server';
 
 // GET /api/cs/agents — List CS agents (from team_members)
 export async function GET(request: NextRequest) {
@@ -64,6 +64,49 @@ export async function POST(request: NextRequest) {
 
         const { name, email, role, assigned_devices } = await request.json();
         if (!name) return NextResponse.json({ error: 'Nama wajib diisi' }, { status: 400 });
+
+        // --- Auto-Migration Logic for Existing Users ---
+        if (email) {
+            // Need service client to bypass RLS to search all profiles
+            const serviceSupabase = await createServiceClient();
+            
+            // Check if user already exists in profiles
+            const { data: existingProfile } = await serviceSupabase
+                .from('profiles')
+                .select('id, tenant_id')
+                .eq('email', email)
+                .single();
+
+            if (existingProfile) {
+                // User already registered! Take over their account.
+                const oldTenantId = existingProfile.tenant_id;
+                
+                // 1. Move them to the new workspace and change role
+                const { error: updateError } = await serviceSupabase
+                    .from('profiles')
+                    .update({ 
+                        tenant_id: profile.tenant_id,
+                        role: role || 'agent'
+                    })
+                    .eq('id', existingProfile.id);
+                
+                if (updateError) throw updateError;
+
+                // 2. Clean up their old workspace (optional, but good for hygiene if they were the only user)
+                if (oldTenantId !== profile.tenant_id) {
+                    const { count } = await serviceSupabase
+                        .from('profiles')
+                        .select('*', { count: 'exact', head: true })
+                        .eq('tenant_id', oldTenantId);
+                    
+                    if (count === 0) {
+                        // Safe to delete the old empty tenant
+                        await serviceSupabase.from('tenants').delete().eq('id', oldTenantId);
+                    }
+                }
+            }
+        }
+        // ----------------------------------------------
 
         const { data, error } = await supabase
             .from('team_members')
