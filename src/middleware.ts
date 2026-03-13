@@ -38,7 +38,9 @@ export async function middleware(request: NextRequest) {
         request.nextUrl.pathname.startsWith('/register');
     const isDashboardPage = !isAuthPage &&
         !request.nextUrl.pathname.startsWith('/api') &&
+        !request.nextUrl.pathname.startsWith('/u/') &&
         request.nextUrl.pathname !== '/' &&
+        !request.nextUrl.pathname.startsWith('/auth') &&
         !request.nextUrl.pathname.startsWith('/_next');
 
     if (!user && isDashboardPage) {
