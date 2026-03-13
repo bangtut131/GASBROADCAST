@@ -52,22 +52,42 @@ export async function GET(request: NextRequest) {
 
         // Group by phone - take first (latest) per phone
         const seen = new Set<string>();
-        const conversations = (messages || [])
-            .filter(m => {
-                if (seen.has(m.phone)) return false;
-                seen.add(m.phone);
-                return true;
-            })
-            .map(m => ({
-                phone: m.phone,
-                name: m.contact?.name || null,
-                category: (m.contact?.tags && m.contact.tags.length > 0) ? m.contact.tags[0] : 'uncategorized',
-                lastMessage: m.content?.substring(0, 60) || '[Media]',
-                lastTime: m.created_at,
-                unread: unreadMap.get(m.phone) || 0,
-                deviceId: m.device?.id || null,
-                deviceName: m.device?.name || '',
-            }));
+        const uniqueConversations = (messages || []).filter(m => {
+            if (seen.has(m.phone)) return false;
+            seen.add(m.phone);
+            return true;
+        });
+
+        // Fetch latest campaign for the visible phones
+        const phones = Array.from(seen);
+        const campaignMap = new Map<string, string>();
+        
+        if (phones.length > 0) {
+            const { data: bMessages } = await supabase
+                .from('broadcast_messages')
+                .select('phone, campaign:campaigns(name), sent_at')
+                .in('phone', phones)
+                .order('sent_at', { ascending: false });
+
+            (bMessages || []).forEach((bm: any) => {
+                const campaignName = Array.isArray(bm.campaign) ? bm.campaign[0]?.name : bm.campaign?.name;
+                if (!campaignMap.has(bm.phone) && campaignName) {
+                    campaignMap.set(bm.phone, campaignName);
+                }
+            });
+        }
+
+        const conversations = uniqueConversations.map(m => ({
+            phone: m.phone,
+            name: m.contact?.name || null,
+            category: (m.contact?.tags && m.contact.tags.length > 0) ? m.contact.tags[0] : 'uncategorized',
+            lastMessage: m.content?.substring(0, 60) || '[Media]',
+            lastTime: m.created_at,
+            unread: unreadMap.get(m.phone) || 0,
+            deviceId: m.device?.id || null,
+            deviceName: m.device?.name || '',
+            campaignName: campaignMap.get(m.phone) || null,
+        }));
 
         const response = NextResponse.json({ success: true, data: conversations });
         response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate');

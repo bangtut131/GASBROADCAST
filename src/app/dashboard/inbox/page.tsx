@@ -16,6 +16,7 @@ interface Conversation {
     unread: number;
     deviceId: string | null;
     deviceName: string;
+    campaignName: string | null;
 }
 
 interface Message {
@@ -31,6 +32,7 @@ export default function InboxPage() {
     const [search, setSearch] = useState('');
     const [filterCategory, setFilterCategory] = useState<string>('all');
     const [filterDevice, setFilterDevice] = useState<string>('all');
+    const [filterCampaign, setFilterCampaign] = useState<string>('all');
     const [conversations, setConversations] = useState<Conversation[]>([]);
     const [selectedPhone, setSelectedPhone] = useState<string | null>(null);
     const [messages, setMessages] = useState<Message[]>([]);
@@ -186,12 +188,14 @@ export default function InboxPage() {
     // Compute unique filters
     const uniqueCategories = Array.from(new Set(conversations.map(c => c.category))).filter(Boolean);
     const uniqueDevices = Array.from(new Map(conversations.filter(c => c.deviceId).map(c => [c.deviceId, c.deviceName])).entries());
+    const uniqueCampaigns = Array.from(new Set(conversations.map(c => c.campaignName))).filter(Boolean) as string[];
 
     const filtered = conversations.filter(c => {
         const matchSearch = (c.name || c.phone).toLowerCase().includes(search.toLowerCase());
         const matchCategory = filterCategory === 'all' || c.category === filterCategory;
         const matchDevice = filterDevice === 'all' || c.deviceId === filterDevice;
-        return matchSearch && matchCategory && matchDevice;
+        const matchCampaign = filterCampaign === 'all' || c.campaignName === filterCampaign;
+        return matchSearch && matchCategory && matchDevice && matchCampaign;
     });
 
     const selectedConv = conversations.find(c => c.phone === selectedPhone);
@@ -226,6 +230,15 @@ export default function InboxPage() {
                             <option value="all">🏷️ Semua Kategori</option>
                             {uniqueCategories.map(cat => (
                                 <option key={cat} value={cat}>{cat === 'uncategorized' ? 'Tanpa Kategori' : cat}</option>
+                            ))}
+                        </select>
+                    </div>
+                    
+                    <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
+                        <select className="form-input" style={{ flex: 1, padding: 'var(--space-2)', fontSize: 'var(--text-xs)' }} value={filterCampaign} onChange={e => setFilterCampaign(e.target.value)}>
+                            <option value="all">📢 Semua Broadcast</option>
+                            {uniqueCampaigns.map(camp => (
+                                <option key={camp} value={camp}>{camp}</option>
                             ))}
                         </select>
                     </div>
@@ -275,9 +288,12 @@ export default function InboxPage() {
                                                 {formatTime(conv.lastTime)}
                                             </span>
                                         </div>
-                                        <div style={{ display: 'flex', gap: 4, marginTop: 2, marginBottom: 2 }}>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 2, marginBottom: 2 }}>
                                             {conv.category && conv.category !== 'uncategorized' && (
                                                 <span style={{ fontSize: 9, background: 'var(--color-border)', padding: '1px 6px', borderRadius: 10, color: 'var(--color-text-muted)' }}>{conv.category}</span>
+                                            )}
+                                            {conv.campaignName && (
+                                                <span style={{ fontSize: 9, background: 'var(--color-success)', padding: '1px 6px', borderRadius: 10, color: '#fff' }}>📢 {conv.campaignName}</span>
                                             )}
                                             {conv.deviceName && (
                                                 <span style={{ fontSize: 9, background: 'var(--color-accent-soft)', padding: '1px 6px', borderRadius: 10, color: 'var(--color-accent)' }}>via {conv.deviceName}</span>
