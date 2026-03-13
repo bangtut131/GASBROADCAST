@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { Send, Plus, Play, Pause, CheckCircle, XCircle, Clock, Trash2, Loader2, RotateCw } from 'lucide-react';
+import { Send, Plus, Play, Pause, CheckCircle, XCircle, Clock, Trash2, Loader2, RotateCw, ExternalLink } from 'lucide-react';
 import type { Campaign } from '@/types';
 
 export default function BroadcastPage() {
@@ -10,10 +11,27 @@ export default function BroadcastPage() {
     const [loading, setLoading] = useState(true);
     const [deleting, setDeleting] = useState<string | null>(null);
     const [running, setRunning] = useState<string | null>(null);
+    const router = useRouter();
     const supabase = createClient();
 
     useEffect(() => {
         loadCampaigns();
+
+        const channel = supabase.channel('campaigns_list_changes')
+            .on(
+                'postgres_changes',
+                { event: 'UPDATE', schema: 'public', table: 'campaigns' },
+                (payload) => {
+                    setCampaigns(prev => prev.map(c => 
+                        c.id === payload.new.id ? { ...c, ...payload.new } : c
+                    ));
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
     }, []);
 
     const loadCampaigns = async () => {
@@ -122,10 +140,11 @@ export default function BroadcastPage() {
                         </thead>
                         <tbody>
                             {campaigns.map(campaign => (
-                                <tr key={campaign.id}>
+                                <tr key={campaign.id} style={{ cursor: 'pointer', transition: 'background 0.2s' }} onClick={() => router.push(`/dashboard/broadcast/${campaign.id}`)} className="hover:bg-[var(--color-bg-secondary)]">
                                     <td>
-                                        <span style={{ fontWeight: 500, color: 'var(--color-text-primary)' }}>
+                                        <span style={{ fontWeight: 500, color: 'var(--color-text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
                                             {campaign.name}
+                                            <ExternalLink size={12} style={{ color: 'var(--color-text-muted)' }} />
                                         </span>
                                     </td>
                                     <td>
@@ -156,13 +175,13 @@ export default function BroadcastPage() {
                                     <td style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-xs)' }}>
                                         {new Date(campaign.created_at).toLocaleDateString('id-ID')}
                                     </td>
-                                    <td style={{ textAlign: 'center' }}>
+                                    <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
                                         <div style={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
                                             {(campaign.status === 'running' || campaign.status === 'draft') && (
                                                 <button
                                                     className="btn btn-ghost btn-icon btn-sm"
                                                     style={{ color: 'var(--color-success)' }}
-                                                    onClick={() => runCampaign(campaign.id)}
+                                                    onClick={(e) => { e.stopPropagation(); runCampaign(campaign.id); }}
                                                     disabled={running === campaign.id}
                                                     title="Jalankan broadcast"
                                                 >
@@ -172,7 +191,7 @@ export default function BroadcastPage() {
                                             <button
                                                 className="btn btn-ghost btn-icon btn-sm"
                                                 style={{ color: 'var(--color-danger)' }}
-                                                onClick={() => deleteCampaign(campaign.id, campaign.name)}
+                                                onClick={(e) => { e.stopPropagation(); deleteCampaign(campaign.id, campaign.name); }}
                                                 disabled={deleting === campaign.id}
                                                 title="Hapus campaign"
                                             >

@@ -138,6 +138,20 @@ export default function AdminDashboard() {
                         <ArrowRight size={18} style={{ color: 'var(--color-text-muted)' }} />
                     </div>
                 </a>
+                <a href="/admin/roles" className="card" style={{ textDecoration: 'none', padding: 'var(--space-5)', cursor: 'pointer', transition: 'all 0.2s', border: '1px solid var(--color-border)', gridColumn: '1 / -1' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+                            <div style={{ width: 44, height: 44, borderRadius: 'var(--radius-lg)', background: 'var(--color-info-soft)', color: 'var(--color-info)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <ShieldCheck size={20} />
+                            </div>
+                            <div>
+                                <div style={{ fontWeight: 600, fontSize: 'var(--text-md)' }}>Custom Roles</div>
+                                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>Kelola hak akses role kustom untuk Agen/Member</div>
+                            </div>
+                        </div>
+                        <ArrowRight size={18} style={{ color: 'var(--color-text-muted)' }} />
+                    </div>
+                </a>
             </div>
         </div>
     );

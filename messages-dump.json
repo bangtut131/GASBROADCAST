@@ -1,0 +1,66 @@
+{
+  "outbox": [
+    {
+      "phone": "6285329859683",
+      "direction": "outbound",
+      "content": "broken",
+      "created_at": "2026-03-12T10:06:04.711673+00:00"
+    },
+    {
+      "phone": "6285329859683",
+      "direction": "outbound",
+      "content": "hahaha",
+      "created_at": "2026-03-12T09:58:53.980027+00:00"
+    },
+    {
+      "phone": "6285329859683",
+      "direction": "outbound",
+      "content": "tus",
+      "created_at": "2026-03-12T09:57:51.391919+00:00"
+    },
+    {
+      "phone": "6285117071411",
+      "direction": "outbound",
+      "content": "bagau",
+      "created_at": "2026-03-12T09:57:39.139688+00:00"
+    },
+    {
+      "phone": "61276868870288",
+      "direction": "outbound",
+      "content": "bagau",
+      "created_at": "2026-03-12T09:57:24.316247+00:00"
+    }
+  ],
+  "inbox": [
+    {
+      "phone": "98943295832112",
+      "direction": "inbound",
+      "content": "Bebs",
+      "created_at": "2026-03-12T12:29:53.18857+00:00"
+    },
+    {
+      "phone": "98943295832112",
+      "direction": "inbound",
+      "content": "Mantau",
+      "created_at": "2026-03-12T12:29:43.100491+00:00"
+    },
+    {
+      "phone": "98943295832112",
+      "direction": "inbound",
+      "content": "Mantau",
+      "created_at": "2026-03-12T12:19:28.478668+00:00"
+    },
+    {
+      "phone": "61276868870288",
+      "direction": "inbound",
+      "content": "Merdeka !!!",
+      "created_at": "2026-03-12T12:19:17.81625+00:00"
+    },
+    {
+      "phone": "status@broadcast",
+      "direction": "inbound",
+      "content": "[Media]",
+      "created_at": "2026-03-12T12:14:04.795119+00:00"
+    }
+  ]
+}

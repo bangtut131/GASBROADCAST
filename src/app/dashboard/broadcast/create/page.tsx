@@ -55,6 +55,7 @@ export default function CreateBroadcastPage() {
     const [maxDelay, setMaxDelay] = useState(8);
     const [scheduledAt, setScheduledAt] = useState('');
     const [sendNow, setSendNow] = useState(true);
+    const [appendUnsubscribe, setAppendUnsubscribe] = useState(false);
 
     // Contacts target
     const [allContacts, setAllContacts] = useState<ContactItem[]>([]);
@@ -227,13 +228,17 @@ export default function CreateBroadcastPage() {
         const phones = getTargetPhones();
 
         try {
+            const finalMessageTemplate = appendUnsubscribe 
+                ? messageTemplate + "\n\nBalas 'UNSUB' atau klik {unsubscribe_link} untuk berhenti menerima pesan."
+                : messageTemplate;
+
             const res = await fetch('/api/campaigns', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     name,
                     device_id: selectedDevice,
-                    message_template: messageTemplate,
+                    message_template: finalMessageTemplate,
                     target_type: targetType === 'contacts' || targetType === 'csv' ? 'manual' : targetType,
                     target_group_id: targetType === 'group' ? selectedGroup : null,
                     target_phones: phones,
@@ -576,32 +581,52 @@ export default function CreateBroadcastPage() {
 
                         {/* Media */}
                         <div className="card">
-                            <h3 style={{ fontSize: 'var(--text-md)', marginBottom: 'var(--space-4)' }}>🖼️ Media (Opsional)</h3>
-                            <div className="flex gap-2" style={{ marginBottom: 'var(--space-4)' }}>
-                                {(['none', 'image', 'video', 'document'] as MediaType[]).map(type => (
-                                    <button
-                                        key={type}
-                                        type="button"
-                                        className={`btn btn-sm ${mediaType === type ? 'btn-primary' : 'btn-secondary'}`}
-                                        onClick={() => setMediaType(type)}
-                                    >
-                                        {type === 'none' ? 'Teks Saja' : type === 'image' ? '🖼️ Gambar' : type === 'video' ? '🎥 Video' : '📄 Dokumen'}
-                                    </button>
-                                ))}
-                            </div>
-                            {mediaType !== 'none' && (
-                                <div className="form-group">
-                                    <label className="form-label">URL {mediaType} *</label>
-                                    <input
-                                        type="url"
-                                        className="form-input"
-                                        placeholder={`https://example.com/file.${mediaType === 'image' ? 'jpg' : mediaType === 'video' ? 'mp4' : 'pdf'}`}
-                                        value={mediaUrl}
-                                        onChange={e => setMediaUrl(e.target.value)}
-                                    />
-                                    <span className="form-hint">URL harus bisa diakses publik oleh WhatsApp</span>
+                            <h3 style={{ fontSize: 'var(--text-md)', marginBottom: 'var(--space-4)' }}>🖼️ Media & Fitur Ekstra</h3>
+                            <div className="form-group mb-4">
+                                <label className="form-label" style={{ marginBottom: 'var(--space-2)' }}>Pilih Media (Opsional)</label>
+                                <div className="flex gap-2" style={{ marginBottom: 'var(--space-4)' }}>
+                                    {(['none', 'image', 'video', 'document'] as MediaType[]).map(type => (
+                                        <button
+                                            key={type}
+                                            type="button"
+                                            className={`btn btn-sm ${mediaType === type ? 'btn-primary' : 'btn-secondary'}`}
+                                            onClick={() => setMediaType(type)}
+                                        >
+                                            {type === 'none' ? 'Teks Saja' : type === 'image' ? '🖼️ Gambar' : type === 'video' ? '🎥 Video' : '📄 Dokumen'}
+                                        </button>
+                                    ))}
                                 </div>
-                            )}
+                                {mediaType !== 'none' && (
+                                    <div className="form-group mb-4">
+                                        <label className="form-label">URL {mediaType} *</label>
+                                        <input
+                                            type="url"
+                                            className="form-input"
+                                            placeholder={`https://example.com/file.${mediaType === 'image' ? 'jpg' : mediaType === 'video' ? 'mp4' : 'pdf'}`}
+                                            value={mediaUrl}
+                                            onChange={e => setMediaUrl(e.target.value)}
+                                        />
+                                        <span className="form-hint">URL harus bisa diakses publik oleh WhatsApp</span>
+                                    </div>
+                                )}
+                            </div>
+                            
+                            <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: 'var(--space-4)' }}>
+                                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)', cursor: 'pointer' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={appendUnsubscribe}
+                                        onChange={e => setAppendUnsubscribe(e.target.checked)}
+                                        style={{ width: 16, height: 16, marginTop: 2, accentColor: 'var(--color-accent)' }}
+                                    />
+                                    <div>
+                                        <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--color-text-primary)' }}>Selipkan Link Berhenti Berlangganan (Unsubscribe)</div>
+                                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginTop: 2 }}>
+                                            Sistem akan menyisipkan tautan bagi penerima untuk berhenti (opsi Blokir Nomor). Kontak yang memilih unsubscribe = dihapus dari kiriman massal berikutnya.
+                                        </div>
+                                    </div>
+                                </label>
+                            </div>
                         </div>
 
                         {/* Send Settings */}
@@ -659,11 +684,11 @@ export default function CreateBroadcastPage() {
                                         </div>
                                     )}
                                     <div style={{ background: '#128c7e', color: 'white', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-sm)', lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                                        {messageTemplate
-                                            ? messageTemplate
+                                        {messageTemplate || appendUnsubscribe
+                                            ? (messageTemplate
                                                 .replace(/{greeting}/gi, useGreeting && greetings.length > 0 ? greetings[Math.floor(Math.random() * greetings.length)] : 'Halo')
                                                 .replace(/{name}/gi, 'Budi Santoso')
-                                                .replace(/{phone}/gi, '628123456789')
+                                                .replace(/{phone}/gi, '628123456789') + (appendUnsubscribe ? "\n\nBalas 'UNSUB' atau klik https://wa.example.com/api/web... untuk berhenti menerima pesan." : ""))
                                             : <span style={{ opacity: 0.6, fontStyle: 'italic' }}>Preview pesan akan tampil di sini...</span>
                                         }
                                     </div>

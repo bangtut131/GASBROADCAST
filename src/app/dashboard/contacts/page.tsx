@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { Users, Plus, Search, Upload, Tag, Trash2, MoreVertical, X, Download, Loader2, CheckCircle } from 'lucide-react';
+import { Users, Plus, Search, Upload, Tag, Trash2, MoreVertical, X, Download, Loader2, CheckCircle, ShieldAlert } from 'lucide-react';
 import type { Contact } from '@/types';
 
 export default function ContactsPage() {
@@ -164,6 +164,9 @@ export default function ContactsPage() {
                     <button className="btn btn-secondary" onClick={() => csvInputRef.current?.click()} disabled={importing}>
                         {importing ? <><Loader2 size={16} className="animate-spin" /> Mengimport...</> : <><Upload size={16} /> Import CSV</>}
                     </button>
+                    <a href="/dashboard/contacts/blacklist" className="btn btn-secondary" style={{ color: 'var(--color-danger)' }} title="Kelola nomor terblokir/unsubscribed">
+                        <ShieldAlert size={16} /> Blokir Nomor
+                    </a>
                     <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
                         <Plus size={16} /> Tambah Kontak
                     </button>

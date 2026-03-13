@@ -116,24 +116,54 @@ export async function POST(request: NextRequest) {
 
 async function startBroadcast(supabase: any, campaign: any, tenantId: string) {
     try {
-        let phones: string[] = [];
+        let targets: { phone: string; contact_id?: string }[] = [];
 
         if (campaign.target_type === 'group' && campaign.target_group_id) {
             const { data: members } = await supabase
                 .from('contact_group_members')
-                .select('contact:contacts(phone, name)')
+                .select('contact:contacts(id, phone)')
                 .eq('group_id', campaign.target_group_id);
-            phones = (members || []).map((m: any) => m.contact?.phone).filter(Boolean);
+            targets = (members || [])
+                .map((m: any) => ({ phone: m.contact?.phone, contact_id: m.contact?.id }))
+                .filter((t: any) => t.phone);
         } else if (campaign.target_type === 'manual' && campaign.target_phones) {
-            phones = campaign.target_phones;
+            // Find existing contacts to link contact_id for {name} parsing
+            const { data: existingContacts } = await supabase
+                .from('contacts')
+                .select('id, phone')
+                .eq('tenant_id', tenantId)
+                .in('phone', campaign.target_phones);
+            
+            targets = campaign.target_phones.map((p: string) => {
+                const match = existingContacts?.find((c: any) => c.phone === p);
+                return { phone: p, contact_id: match?.id };
+            });
         }
 
-        if (phones.length === 0) return;
+        if (targets.length === 0) return;
+
+        // Skip blacklisted phones
+        const phonesToCheck = targets.map((t: any) => t.phone);
+        const { data: blacklisted } = await supabase
+            .from('blacklisted_contacts')
+            .select('phone')
+            .eq('tenant_id', tenantId)
+            .in('phone', phonesToCheck);
+            
+        const blacklistedPhones = new Set((blacklisted || []).map((b: any) => b.phone));
+        const filteredTargets = targets.filter((t: any) => !blacklistedPhones.has(t.phone));
+
+        if (filteredTargets.length === 0) {
+            // Update campaign status to completed if everyone is blacklisted
+            await supabase.from('campaigns').update({ status: 'completed', total_recipients: 0 }).eq('id', campaign.id);
+            return;
+        }
 
         // Create broadcast_messages records (pending)
-        const messages = phones.map(phone => ({
+        const messages = filteredTargets.map((t: any) => ({
             campaign_id: campaign.id,
-            phone,
+            contact_id: t.contact_id || null,
+            phone: t.phone,
             status: 'pending',
         }));
 
@@ -142,7 +172,7 @@ async function startBroadcast(supabase: any, campaign: any, tenantId: string) {
         // Update total_recipients
         await supabase
             .from('campaigns')
-            .update({ total_recipients: phones.length, status: 'running' })
+            .update({ total_recipients: filteredTargets.length, status: 'running' })
             .eq('id', campaign.id);
     } catch (err) {
         console.error('startBroadcast error:', err);
