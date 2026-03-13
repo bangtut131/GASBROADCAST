@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export async function GET(request: NextRequest) {
     try {
         const supabase = await createClient();
@@ -23,7 +26,10 @@ export async function GET(request: NextRequest) {
             tenant = data;
         }
 
-        return NextResponse.json({ success: true, data: { ...profile, tenant, email: user.email } });
+        return NextResponse.json(
+            { success: true, data: { ...profile, tenant, email: user.email } },
+            { headers: { 'Cache-Control': 'no-store, max-age=0' } }
+        );
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
