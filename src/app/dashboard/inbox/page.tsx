@@ -10,9 +10,11 @@ import {
 interface Conversation {
     phone: string;
     name: string | null;
+    category: string;
     lastMessage: string;
     lastTime: string;
     unread: number;
+    deviceId: string | null;
     deviceName: string;
 }
 
@@ -27,6 +29,8 @@ interface Message {
 
 export default function InboxPage() {
     const [search, setSearch] = useState('');
+    const [filterCategory, setFilterCategory] = useState<string>('all');
+    const [filterDevice, setFilterDevice] = useState<string>('all');
     const [conversations, setConversations] = useState<Conversation[]>([]);
     const [selectedPhone, setSelectedPhone] = useState<string | null>(null);
     const [messages, setMessages] = useState<Message[]>([]);
@@ -179,9 +183,17 @@ export default function InboxPage() {
         }
     }, [selectedPhone, conversations]);
 
-    const filtered = conversations.filter(c =>
-        (c.name || c.phone).toLowerCase().includes(search.toLowerCase())
-    );
+    // Compute unique filters
+    const uniqueCategories = Array.from(new Set(conversations.map(c => c.category))).filter(Boolean);
+    const uniqueDevices = Array.from(new Map(conversations.filter(c => c.deviceId).map(c => [c.deviceId, c.deviceName])).entries());
+
+    const filtered = conversations.filter(c => {
+        const matchSearch = (c.name || c.phone).toLowerCase().includes(search.toLowerCase());
+        const matchCategory = filterCategory === 'all' || c.category === filterCategory;
+        const matchDevice = filterDevice === 'all' || c.deviceId === filterDevice;
+        return matchSearch && matchCategory && matchDevice;
+    });
+
     const selectedConv = conversations.find(c => c.phone === selectedPhone);
 
     const formatTime = (iso: string) => {
@@ -203,6 +215,21 @@ export default function InboxPage() {
                             {realtimeStatus === 'connected' ? 'Live' : realtimeStatus === 'error' ? 'Offline' : 'Connecting...'}
                         </div>
                     </div>
+                    <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
+                        <select className="form-input" style={{ flex: 1, padding: 'var(--space-2)', fontSize: 'var(--text-xs)' }} value={filterDevice} onChange={e => setFilterDevice(e.target.value)}>
+                            <option value="all">📱 Semua Device</option>
+                            {uniqueDevices.map(([id, name]) => (
+                                <option key={id || 'unknown'} value={id || 'unknown'}>{name}</option>
+                            ))}
+                        </select>
+                        <select className="form-input" style={{ flex: 1, padding: 'var(--space-2)', fontSize: 'var(--text-xs)' }} value={filterCategory} onChange={e => setFilterCategory(e.target.value)}>
+                            <option value="all">🏷️ Semua Kategori</option>
+                            {uniqueCategories.map(cat => (
+                                <option key={cat} value={cat}>{cat === 'uncategorized' ? 'Tanpa Kategori' : cat}</option>
+                            ))}
+                        </select>
+                    </div>
+
                     <div className="search-wrapper" style={{ maxWidth: '100%' }}>
                         <Search className="search-icon" size={16} />
                         <input type="text" className="form-input" placeholder="Cari kontak..." value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: 36 }} />
@@ -244,11 +271,19 @@ export default function InboxPage() {
                                             <span style={{ fontWeight: conv.unread > 0 ? 700 : 500, fontSize: 'var(--text-sm)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: conv.unread > 0 ? 'var(--color-text-primary)' : 'var(--color-text-primary)' }}>
                                                 {conv.name || conv.phone}
                                             </span>
-                                            <span style={{ fontSize: 10, color: conv.unread > 0 ? 'var(--color-accent)' : 'var(--color-text-muted)', flexShrink: 0, marginLeft: 8, fontWeight: conv.unread > 0 ? 600 : 400 }}>
+                                            <span style={{ fontSize: 10, alignSelf: 'flex-start', color: conv.unread > 0 ? 'var(--color-accent)' : 'var(--color-text-muted)', flexShrink: 0, marginLeft: 8, fontWeight: conv.unread > 0 ? 600 : 400 }}>
                                                 {formatTime(conv.lastTime)}
                                             </span>
                                         </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
+                                        <div style={{ display: 'flex', gap: 4, marginTop: 2, marginBottom: 2 }}>
+                                            {conv.category && conv.category !== 'uncategorized' && (
+                                                <span style={{ fontSize: 9, background: 'var(--color-border)', padding: '1px 6px', borderRadius: 10, color: 'var(--color-text-muted)' }}>{conv.category}</span>
+                                            )}
+                                            {conv.deviceName && (
+                                                <span style={{ fontSize: 9, background: 'var(--color-accent-soft)', padding: '1px 6px', borderRadius: 10, color: 'var(--color-accent)' }}>via {conv.deviceName}</span>
+                                            )}
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                             <p style={{ fontSize: 'var(--text-xs)', color: conv.unread > 0 ? 'var(--color-text-primary)' : 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: conv.unread > 0 ? 500 : 400, flex: 1, paddingRight: 8 }}>
                                                 {conv.lastMessage}
                                             </p>

@@ -132,8 +132,13 @@ export async function POST(request: NextRequest) {
 
             console.log(`[Webhook wa-web] Found device id=${device.id} tenant_id=${device.tenant_id}`);
 
-            // Clean phone number
-            const phone = payload.from.replace(/\D/g, '') || payload.from;
+            // Clean phone number (handle WhatsApp JID extensions like 62812...:15@s.whatsapp.net)
+            let rawPhone = payload.from;
+            if (rawPhone && rawPhone.includes(':')) {
+                // Split by colon and take the first part, then append the domain
+                rawPhone = rawPhone.split(':')[0] + '@s.whatsapp.net';
+            }
+            const phone = rawPhone.replace(/\D/g, '') || rawPhone;
 
             // Upsert contact
             await supabase.from('contacts').upsert({

@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
         // Get latest message per phone
         let query = supabase
             .from('messages')
-            .select('*, contact:contacts(name, phone), device:devices(name)')
+            .select('*, contact:contacts(name, phone, category), device:devices(id, name)')
             .order('created_at', { ascending: false });
             
         if (assignedDevices.length > 0) {
@@ -61,9 +61,11 @@ export async function GET(request: NextRequest) {
             .map(m => ({
                 phone: m.phone,
                 name: m.contact?.name || null,
+                category: m.contact?.category || 'uncategorized',
                 lastMessage: m.content?.substring(0, 60) || '[Media]',
                 lastTime: m.created_at,
                 unread: unreadMap.get(m.phone) || 0,
+                deviceId: m.device?.id || null,
                 deviceName: m.device?.name || '',
             }));
 
