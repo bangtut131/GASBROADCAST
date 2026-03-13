@@ -12,7 +12,7 @@ import {
 interface Category { id: string; name: string; color: string; icon: string; content_count: number }
 interface Content { id: string; type: 'image' | 'video' | 'text'; title: string | null; content_url: string | null; caption: string | null; category_id: string | null; category?: Category; tags: string[]; use_count: number; last_used_at: string | null; created_at: string }
 interface Device { id: string; name: string; phone_number: string | null; status: string }
-interface Schedule { id: string; name: string; device_id: string; device?: Device; device_ids?: string[]; devices?: Device[]; mode: string; times_of_day: string[]; days_of_week: number[]; category_ids: string[]; window_start: string; window_end: string; cooldown_days: number; caption_template: string | null; is_active: boolean; last_posted_at: string | null; total_posted: number }
+interface Schedule { id: string; name: string; device_id: string; device?: Device; device_ids?: string[]; devices?: Device[]; mode: string; times_of_day: string[]; days_of_week: number[]; category_ids: string[]; content_ids: string[]; window_start: string; window_end: string; cooldown_days: number; caption_template: string | null; is_active: boolean; last_posted_at: string | null; total_posted: number }
 interface Log { id: string; content_id: string; schedule_id: string; device?: Device; status: string; error_message: string | null; posted_at: string }
 
 type ActiveTab = 'library' | 'schedules' | 'history';
@@ -49,6 +49,7 @@ export default function WAStatusPage() {
     const [schedForm, setSchedForm] = useState({
         name: '', device_ids: [] as string[], mode: 'random',
         category_ids: [] as string[],
+        content_ids: [] as string[],
         times_of_day: ['08:00', '12:00', '18:00'],
         days_of_week: [0, 1, 2, 3, 4, 5, 6],
         window_start: '07:00', window_end: '21:00',
@@ -200,7 +201,8 @@ export default function WAStatusPage() {
             name: `${s.name} (copy)`,
             device_ids: [],  // Force user to pick devices
             mode: s.mode,
-            category_ids: [...s.category_ids],
+            category_ids: [...(s.category_ids || [])],
+            content_ids: [...(s.content_ids || [])],
             times_of_day: [...s.times_of_day],
             days_of_week: [...s.days_of_week],
             window_start: s.window_start,
@@ -229,6 +231,13 @@ export default function WAStatusPage() {
         setSchedForm(f => ({
             ...f,
             category_ids: f.category_ids.includes(id) ? f.category_ids.filter(c => c !== id) : [...f.category_ids, id],
+        }));
+    };
+
+    const toggleContentSelection = (id: string) => {
+        setSchedForm(f => ({
+            ...f,
+            content_ids: f.content_ids.includes(id) ? f.content_ids.filter(c => c !== id) : [...f.content_ids, id],
         }));
     };
 
@@ -664,27 +673,50 @@ export default function WAStatusPage() {
                                     {[
                                         { id: 'random', label: '🎲 Random', desc: 'Acak dari kategori' },
                                         { id: 'sequence', label: '📋 Sequence', desc: 'Berurutan dari kategori' },
+                                        { id: 'manual', label: '🤏 Kustom / Manual', desc: 'Pilih konten spesifik' },
                                     ].map(m => (
                                         <div key={m.id} onClick={() => setSchedForm(f => ({ ...f, mode: m.id }))} style={{ flex: 1, padding: 'var(--space-3)', border: `2px solid ${schedForm.mode === m.id ? 'var(--color-accent)' : 'var(--color-border)'}`, borderRadius: 'var(--radius-md)', cursor: 'pointer', background: schedForm.mode === m.id ? 'var(--color-accent-soft)' : 'transparent' }}>
-                                            <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>{m.label}</div>
-                                            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>{m.desc}</div>
+                                            <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', display: 'flex', alignItems: 'center', gap: 4 }}>{m.label}</div>
+                                            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginTop: 2 }}>{m.desc}</div>
                                         </div>
                                     ))}
                                 </div>
                             </div>
 
-                            {/* Category Filter */}
-                            <div className="form-group">
-                                <label className="form-label">Kategori Konten (kosong = semua kategori)</label>
-                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                    {categories.map(c => (
-                                        <button key={c.id} type="button" className={`btn btn-sm ${schedForm.category_ids.includes(c.id) ? 'btn-primary' : 'btn-secondary'}`} onClick={() => toggleCategory(c.id)} style={{ borderLeft: `3px solid ${c.color}` }}>
-                                            {c.icon} {c.name}
-                                        </button>
-                                    ))}
-                                    {categories.length === 0 && <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>Buat kategori dulu di Library</span>}
+                            {/* Category OR Content Selection */}
+                            {schedForm.mode === 'manual' ? (
+                                <div className="form-group">
+                                    <label className="form-label">Pilih Konten Spesifik ({schedForm.content_ids.length} dipilih)</label>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 'var(--space-2)', maxHeight: 200, overflowY: 'auto', padding: 'var(--space-2)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-bg-secondary)' }}>
+                                        {contents.length === 0 ? (
+                                            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>Tidak ada konten di library</span>
+                                        ) : contents.map(c => (
+                                            <label key={c.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-2)', padding: 'var(--space-2)', borderRadius: 'var(--radius-md)', cursor: 'pointer', background: schedForm.content_ids.includes(c.id) ? 'var(--color-accent-soft)' : 'var(--color-bg-primary)', border: `1px solid ${schedForm.content_ids.includes(c.id) ? 'var(--color-accent)' : 'var(--color-border)'}` }}>
+                                                <input type="checkbox" checked={schedForm.content_ids.includes(c.id)} onChange={() => toggleContentSelection(c.id)} style={{ marginTop: 2, accentColor: 'var(--color-accent)' }} />
+                                                <div style={{ overflow: 'hidden' }}>
+                                                    <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{c.title || 'Tanpa judul'}</div>
+                                                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                                                        {typeIcon(c.type)} {c.type}
+                                                    </div>
+                                                </div>
+                                            </label>
+                                        ))}
+                                    </div>
+                                    {schedForm.content_ids.length === 0 && <span className="form-hint" style={{ color: 'var(--color-warning)' }}>Wajib pilih minimal 1 konten untuk mode Kustom</span>}
                                 </div>
-                            </div>
+                            ) : (
+                                <div className="form-group">
+                                    <label className="form-label">Kategori Konten (kosong = semua kategori)</label>
+                                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                        {categories.map(c => (
+                                            <button key={c.id} type="button" className={`btn btn-sm ${schedForm.category_ids.includes(c.id) ? 'btn-primary' : 'btn-secondary'}`} onClick={() => toggleCategory(c.id)} style={{ borderLeft: `3px solid ${c.color}` }}>
+                                                {c.icon} {c.name}
+                                            </button>
+                                        ))}
+                                        {categories.length === 0 && <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>Buat kategori dulu di Library</span>}
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Times */}
                             <div className="form-group">
@@ -728,8 +760,8 @@ export default function WAStatusPage() {
 
                             <div className="form-group">
                                 <label className="form-label">Template Caption (opsional)</label>
-                                <input className="form-input" placeholder="Selamat pagi {hari}! — {tanggal} 🌅" value={schedForm.caption_template} onChange={e => setSchedForm(f => ({ ...f, caption_template: e.target.value }))} />
-                                <span className="form-hint">Override caption konten. Variabel: {'{hari}'}, {'{tanggal}'}, {'{jam}'}, {'{judul}'}</span>
+                                <input className="form-input" placeholder="Selamat pagi {hari}! — {tanggal} 🌅\n\n{caption}" value={schedForm.caption_template} onChange={e => setSchedForm(f => ({ ...f, caption_template: e.target.value }))} />
+                                <span className="form-hint">Override caption konten. Variabel: {'{sapaan}'}, {'{hari}'}, {'{tanggal}'}, {'{jam}'}, {'{judul}'}, {'{caption}'}</span>
                             </div>
                         </div>
 

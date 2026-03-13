@@ -136,7 +136,7 @@ export async function POST(request: NextRequest) {
                 last_posted_at: new Date().toISOString(),
                 total_posted: (schedule.total_posted || 0) + 1,
             };
-            if (schedule.mode === 'sequence') {
+            if (schedule.mode === 'sequence' || schedule.mode === 'manual') {
                 updates.sequence_index = (schedule.sequence_index + 1);
             }
             await supabase.from('status_schedules').update(updates).eq('id', schedule.id);
@@ -207,6 +207,27 @@ export async function GET(request: NextRequest) {
 // ====== Helpers ======
 
 async function pickContent(supabase: any, schedule: any) {
+    if (schedule.mode === 'manual' && schedule.content_ids?.length > 0) {
+        // Pick sequentially from the explicitly selected contents
+        const idx = (schedule.sequence_index || 0) % schedule.content_ids.length;
+        const targetId = schedule.content_ids[idx];
+        const { data } = await supabase.from('status_contents')
+            .select('*')
+            .eq('id', targetId)
+            .eq('is_active', true)
+            .single();
+        if (data) return data;
+        
+        // Fallback: If the specific content was deleted, just pick the first available one
+        const { data: fallbackList } = await supabase.from('status_contents')
+            .select('*')
+            .in('id', schedule.content_ids)
+            .eq('is_active', true)
+            .limit(1);
+            
+        return fallbackList?.[0] || null;
+    }
+
     const categoryFilter = schedule.category_ids?.length > 0
         ? schedule.category_ids : null;
 
@@ -248,12 +269,22 @@ async function pickContent(supabase: any, schedule: any) {
 
 function buildCaption(template: string, content: any): string {
     const now = new Date();
+    
+    // Determine sapaan based on hour
+    const hour = now.getHours();
+    let sapaan = 'Selamat Malam';
+    if (hour >= 3 && hour < 11) sapaan = 'Selamat Pagi';
+    else if (hour >= 11 && hour < 15) sapaan = 'Selamat Siang';
+    else if (hour >= 15 && hour < 18) sapaan = 'Selamat Sore';
+
     const vars: Record<string, string> = {
         hari: now.toLocaleDateString('id-ID', { weekday: 'long' }),
         tanggal: now.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }),
         jam: now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
         judul: content.title || '',
         tag: (content.tags || []).join(' '),
+        caption: content.caption || '',
+        sapaan: sapaan,
     };
 
     return Object.entries(vars).reduce(

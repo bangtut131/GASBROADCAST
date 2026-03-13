@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
 
         const body = await request.json();
         const {
-            name, device_id, device_ids, mode, category_ids, times_of_day,
+            name, device_id, device_ids, mode, category_ids, content_ids, times_of_day,
             days_of_week, window_start, window_end, timezone,
             cooldown_days, caption_template,
         } = body;
@@ -86,6 +86,7 @@ export async function POST(request: NextRequest) {
                 name,
                 mode: mode || 'random',
                 category_ids: category_ids || [],
+                content_ids: content_ids || [],
                 times_of_day: times_of_day || ['08:00'],
                 days_of_week: days_of_week ?? [0, 1, 2, 3, 4, 5, 6],
                 window_start: window_start || '07:00',
