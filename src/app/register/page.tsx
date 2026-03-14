@@ -102,8 +102,8 @@ export default function RegisterPage() {
         <div className="auth-branding">
           <div className="auth-branding-content">
             <div className="auth-logo">
-              <div className="auth-logo-icon" style={{ background: 'transparent', width: 64, height: 64 }}>
-                <Image src="/logo.png" alt="GAS Broadcast Logo" width={64} height={64} style={{ objectFit: 'contain' }} priority />
+              <div className="auth-logo-icon" style={{ background: 'transparent', width: 96, height: 96 }}>
+                <Image src="/logo.png" alt="GAS Broadcast Logo" width={96} height={96} style={{ objectFit: 'contain' }} priority unoptimized />
               </div>
               <span className="auth-logo-text">GAS Smart Broadcast</span>
             </div>

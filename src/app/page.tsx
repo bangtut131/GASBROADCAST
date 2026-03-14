@@ -9,8 +9,8 @@ export default function LandingPage() {
       <nav className="landing-nav">
         <div className="landing-nav-inner">
           <div className="landing-nav-brand">
-            <div className="landing-logo-icon" style={{ background: 'transparent' }}>
-              <Image src="/logo.png" alt="GAS Broadcast Logo" width={40} height={40} style={{ objectFit: 'contain' }} priority />
+            <div className="landing-logo-icon" style={{ background: 'transparent', width: 56, height: 56 }}>
+              <Image src="/logo.png" alt="GAS Broadcast Logo" width={56} height={56} style={{ objectFit: 'contain' }} priority unoptimized />
             </div>
             <span className="landing-logo-text">GAS Smart Broadcast</span>
           </div>
@@ -171,8 +171,8 @@ export default function LandingPage() {
       <footer className="landing-footer">
         <div className="landing-footer-inner">
           <div className="landing-footer-brand">
-            <div className="landing-logo-icon" style={{ width: 32, height: 32, background: 'transparent' }}>
-              <Image src="/logo.png" alt="GAS Broadcast Logo" width={32} height={32} style={{ objectFit: 'contain' }} />
+            <div className="landing-logo-icon" style={{ width: 44, height: 44, background: 'transparent' }}>
+              <Image src="/logo.png" alt="GAS Broadcast Logo" width={44} height={44} style={{ objectFit: 'contain' }} unoptimized />
             </div>
             <span className="landing-logo-text">GAS Smart Broadcast</span>
           </div>
