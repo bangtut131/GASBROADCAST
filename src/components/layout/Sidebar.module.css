@@ -43,8 +43,8 @@
 .logo {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 8px 4px;
+    gap: 4px;
+    padding: 4px 2px;
     margin-bottom: 24px;
     flex-shrink: 0;
     text-decoration: none;
@@ -52,8 +52,8 @@
 }
 
 .logoIcon {
-    width: 44px;
-    height: 44px;
+    width: 52px;
+    height: 52px;
     display: flex;
     align-items: center;
     justify-content: center;
