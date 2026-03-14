@@ -31,6 +31,7 @@ interface InboxData {
         totalInbound: number;
         totalOutbound: number;
         unreadInbox: number;
+        unrepliedInbox: number;
         botHandlingRate: number;
     };
 }
@@ -218,15 +219,16 @@ export default function AnalyticsPage() {
     }
 
     function renderInboxView() {
-        const sum = inboxData?.summary || { totalInbound: 0, totalOutbound: 0, unreadInbox: 0, botHandlingRate: 0 };
+        const sum = inboxData?.summary || { totalInbound: 0, totalOutbound: 0, unreadInbox: 0, unrepliedInbox: 0, botHandlingRate: 0 };
         return (
             <>
                 {/* Inbox Summary Cards */}
-                <div className="grid grid-cols-4" style={{ marginBottom: 'var(--space-6)' }}>
+                <div className="grid grid-cols-5" style={{ marginBottom: 'var(--space-6)' }}>
                     {[
                         { label: 'Pesan Masuk (Inbound)', value: sum.totalInbound.toLocaleString(), icon: <MessageSquare size={20} />, color: 'var(--color-success)', bg: 'var(--color-success-soft)' },
                         { label: 'Pesan Keluar (Outbound)', value: sum.totalOutbound.toLocaleString(), icon: <Send size={20} />, color: 'var(--color-accent)', bg: 'var(--color-accent-soft)' },
                         { label: 'Pesan Belum Dibaca', value: sum.unreadInbox.toLocaleString(), icon: <Activity size={20} />, color: 'var(--color-danger)', bg: 'var(--color-danger-soft)' },
+                        { label: 'Pesan Belum Dibalas', value: sum.unrepliedInbox.toLocaleString(), icon: <TrendingUp size={20} />, color: 'var(--color-warning)', bg: 'var(--color-warning-soft)' },
                         { label: 'Otomatisasi Bot (AI)', value: `${sum.botHandlingRate.toFixed(1)}%`, icon: <Bot size={20} />, color: 'var(--color-info)', bg: 'var(--color-info-soft)' },
                     ].map((card, i) => (
                         <div key={i} className="card" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>

@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
         ] = await Promise.all([
             supabase
                 .from('messages')
-                .select('id, direction, is_from_bot, device_id, created_at')
+                .select('id, direction, is_from_bot, device_id, phone, created_at')
                 .eq('tenant_id', profile.tenant_id)
                 .gte('created_at', sinceISO),
             supabase
@@ -95,6 +95,22 @@ export async function GET(request: NextRequest) {
             value: deviceMap[d.id] || 0
         })).filter(d => d.value > 0); // Only show devices that actually received messages
 
+        // --- Metric 5: Unreplied Messages (Belum Dibalas) ---
+        // Group messages by phone, find the latest message per phone, and check if it's inbound
+        const latestMsgByPhone: Record<string, typeof msgs[0]> = {};
+        msgs.forEach(m => {
+            if (m.phone && (!latestMsgByPhone[m.phone] || new Date(m.created_at) > new Date(latestMsgByPhone[m.phone].created_at))) {
+                latestMsgByPhone[m.phone] = m;
+            }
+        });
+        
+        let unrepliedCount = 0;
+        Object.values(latestMsgByPhone).forEach(latestMsg => {
+            if (latestMsg.direction === 'inbound') {
+                unrepliedCount++;
+            }
+        });
+
         return NextResponse.json({
             success: true,
             data: {
@@ -109,6 +125,7 @@ export async function GET(request: NextRequest) {
                     totalInbound: inboundMsgs.length,
                     totalOutbound: outboundMsgs.length,
                     unreadInbox: unreadCount || 0,
+                    unrepliedInbox: unrepliedCount,
                     botHandlingRate: outboundMsgs.length > 0 ? (botCount / outboundMsgs.length) * 100 : 0
                 }
             }
