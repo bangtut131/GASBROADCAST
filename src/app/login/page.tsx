@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
+import Image from 'next/image';
 import { MessageSquare, Eye, EyeOff, Loader2 } from 'lucide-react';
 
 export default function LoginPage() {
@@ -47,8 +48,8 @@ export default function LoginPage() {
         <div className="auth-branding">
           <div className="auth-branding-content">
             <div className="auth-logo">
-              <div className="auth-logo-icon">
-                <MessageSquare size={28} />
+              <div className="auth-logo-icon" style={{ background: 'transparent', width: 64, height: 64 }}>
+                <Image src="/logo.png" alt="GAS Broadcast Logo" width={64} height={64} style={{ objectFit: 'contain' }} priority />
               </div>
               <span className="auth-logo-text">GAS Smart Broadcast</span>
             </div>

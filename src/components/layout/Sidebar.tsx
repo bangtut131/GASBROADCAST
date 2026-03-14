@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
@@ -73,8 +74,8 @@ export default function Sidebar({ isAdmin, plan = 'free' }: SidebarProps) {
     <aside className={`${s.sidebar} ${collapsed ? s.sidebarCollapsed : ''}`}>
       {/* Logo */}
       <div className={s.logo}>
-        <div className={s.logoIcon}>
-          <MessageSquare size={collapsed ? 20 : 22} />
+        <div className={s.logoIcon} style={{ background: 'transparent' }}>
+          <Image src="/logo.png" alt="GAS Broadcast Logo" width={collapsed ? 24 : 32} height={collapsed ? 24 : 32} style={{ objectFit: 'contain' }} priority />
         </div>
         {!collapsed && (
           <div className={s.logoTextWrap}>
