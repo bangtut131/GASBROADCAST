@@ -34,6 +34,8 @@ export default function InboxPage() {
     const [filterDevice, setFilterDevice] = useState<string>('all');
     const [filterCampaign, setFilterCampaign] = useState<string>('all');
     const [conversations, setConversations] = useState<Conversation[]>([]);
+    const [statusGroups, setStatusGroups] = useState<any[]>([]); // New state for status updates
+    const [activeTab, setActiveTab] = useState<'chats'|'status'>('chats'); // New tab state
     const [selectedPhone, setSelectedPhone] = useState<string | null>(null);
     const [messages, setMessages] = useState<Message[]>([]);
     const [newMessage, setNewMessage] = useState('');
@@ -48,6 +50,11 @@ export default function InboxPage() {
             const res = await fetch('/api/inbox', { cache: 'no-store' });
             const data = await res.json();
             if (data.success) setConversations(data.data);
+            
+            // Also fetch status groups
+            const resStatus = await fetch('/api/inbox/statuses', { cache: 'no-store' });
+            const dataStatus = await resStatus.json();
+            if (dataStatus.success) setStatusGroups(dataStatus.data);
         } catch { } finally { setLoading(false); }
     }, []);
 
@@ -62,8 +69,8 @@ export default function InboxPage() {
     useEffect(() => { loadConversations(); }, [loadConversations]);
 
     useEffect(() => {
-        if (selectedPhone) loadMessages(selectedPhone);
-    }, [selectedPhone, loadMessages]);
+        if (selectedPhone && activeTab === 'chats') loadMessages(selectedPhone);
+    }, [selectedPhone, activeTab, loadMessages]);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -79,7 +86,8 @@ export default function InboxPage() {
                 (payload) => {
                     const newMsg = payload.new as Message & { phone: string };
                     // Add to current chat if it matches selected phone
-                    if (selectedPhone && newMsg.phone === selectedPhone) {
+                    if (selectedPhone && newMsg.phone === selectedPhone && activeTab === 'chats') {
+                        if (newMsg.message_type === 'status') return; // Do not append statuses to active chat
                         setMessages(prev => {
                             // Avoid duplicate if already added optimistically
                             if (prev.some(m => m.id === newMsg.id)) return prev;
@@ -105,10 +113,10 @@ export default function InboxPage() {
     }, [loadConversations]);
 
     useEffect(() => {
-        if (!selectedPhone) return;
+        if (!selectedPhone || activeTab !== 'chats') return;
         const msgTimer = setInterval(() => loadMessages(selectedPhone), 1500);
         return () => clearInterval(msgTimer);
-    }, [selectedPhone, loadMessages]);
+    }, [selectedPhone, activeTab, loadMessages]);
 
 
     const handleSend = async () => {
@@ -190,15 +198,15 @@ export default function InboxPage() {
     const uniqueDevices = Array.from(new Map(conversations.filter(c => c.deviceId).map(c => [c.deviceId, c.deviceName])).entries());
     const uniqueCampaigns = Array.from(new Set(conversations.map(c => c.campaignName))).filter(Boolean) as string[];
 
-    const filtered = conversations.filter(c => {
+    const filtered = (activeTab === 'chats' ? conversations : statusGroups).filter((c: any) => {
         const matchSearch = (c.name || c.phone).toLowerCase().includes(search.toLowerCase());
         const matchCategory = filterCategory === 'all' || c.category === filterCategory;
         const matchDevice = filterDevice === 'all' || c.deviceId === filterDevice;
-        const matchCampaign = filterCampaign === 'all' || c.campaignName === filterCampaign;
+        const matchCampaign = activeTab === 'status' ? true : (filterCampaign === 'all' || c.campaignName === filterCampaign);
         return matchSearch && matchCategory && matchDevice && matchCampaign;
     });
 
-    const selectedConv = conversations.find(c => c.phone === selectedPhone);
+    const selectedConv = (activeTab === 'chats' ? conversations : statusGroups).find((c: any) => c.phone === selectedPhone);
 
     const formatTime = (iso: string) => {
         const d = new Date(iso);
@@ -243,9 +251,25 @@ export default function InboxPage() {
                         </select>
                     </div>
 
-                    <div className="search-wrapper" style={{ maxWidth: '100%' }}>
+                    <div className="search-wrapper" style={{ maxWidth: '100%', marginBottom: 'var(--space-3)' }}>
                         <Search className="search-icon" size={16} />
                         <input type="text" className="form-input" placeholder="Cari kontak..." value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: 36 }} />
+                    </div>
+                    
+                    {/* TABS */}
+                    <div style={{ display: 'flex', gap: 'var(--space-2)', background: 'var(--color-bg-elevated)', padding: 4, borderRadius: 'var(--radius-lg)' }}>
+                        <button 
+                            style={{ flex: 1, padding: '6px', fontSize: 'var(--text-xs)', borderRadius: 'var(--radius-md)', fontWeight: 600, background: activeTab === 'chats' ? 'var(--color-bg-primary)' : 'transparent', color: activeTab === 'chats' ? 'var(--color-text-primary)' : 'var(--color-text-muted)', border: 'none', boxShadow: activeTab === 'chats' ? 'var(--shadow-sm)' : 'none', cursor: 'pointer', transition: 'all var(--transition-fast)' }}
+                            onClick={() => { setActiveTab('chats'); setSelectedPhone(null); }}
+                        >
+                            Chats
+                        </button>
+                        <button 
+                            style={{ flex: 1, padding: '6px', fontSize: 'var(--text-xs)', borderRadius: 'var(--radius-md)', fontWeight: 600, background: activeTab === 'status' ? 'var(--color-bg-primary)' : 'transparent', color: activeTab === 'status' ? 'var(--color-text-primary)' : 'var(--color-text-muted)', border: 'none', boxShadow: activeTab === 'status' ? 'var(--shadow-sm)' : 'none', cursor: 'pointer', transition: 'all var(--transition-fast)' }}
+                            onClick={() => { setActiveTab('status'); setSelectedPhone(null); }}
+                        >
+                            Status WA
+                        </button>
                     </div>
                 </div>
 
@@ -262,7 +286,7 @@ export default function InboxPage() {
                             </p>
                         </div>
                     ) : (
-                        filtered.map(conv => (
+                        filtered.map((conv: any) => (
                             <div
                                 key={conv.phone}
                                 onClick={() => setSelectedPhone(conv.phone)}
@@ -276,15 +300,15 @@ export default function InboxPage() {
                                 }}
                             >
                                 <div className="flex items-center gap-3">
-                                    <div className="avatar" style={{ width: 40, height: 40, fontSize: 'var(--text-md)', flexShrink: 0 }}>
-                                        {(conv.name || conv.phone)[0].toUpperCase()}
+                                    <div className="avatar" style={{ width: 40, height: 40, fontSize: 'var(--text-md)', flexShrink: 0, border: activeTab === 'status' ? '2px solid var(--color-accent)' : 'none' }}>
+                                        {((conv.name || conv.phone)[0]).toUpperCase()}
                                     </div>
                                     <div style={{ flex: 1, minWidth: 0 }}>
                                         <div className="flex justify-between items-center">
-                                            <span style={{ fontWeight: conv.unread > 0 ? 700 : 500, fontSize: 'var(--text-sm)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: conv.unread > 0 ? 'var(--color-text-primary)' : 'var(--color-text-primary)' }}>
+                                            <span style={{ fontWeight: (conv.unread || 0) > 0 ? 700 : 500, fontSize: 'var(--text-sm)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: (conv.unread || 0) > 0 ? 'var(--color-text-primary)' : 'var(--color-text-primary)' }}>
                                                 {conv.name || conv.phone}
                                             </span>
-                                            <span style={{ fontSize: 10, alignSelf: 'flex-start', color: conv.unread > 0 ? 'var(--color-accent)' : 'var(--color-text-muted)', flexShrink: 0, marginLeft: 8, fontWeight: conv.unread > 0 ? 600 : 400 }}>
+                                            <span style={{ fontSize: 10, alignSelf: 'flex-start', color: (conv.unread || 0) > 0 ? 'var(--color-accent)' : 'var(--color-text-muted)', flexShrink: 0, marginLeft: 8, fontWeight: (conv.unread || 0) > 0 ? 600 : 400 }}>
                                                 {formatTime(conv.lastTime)}
                                             </span>
                                         </div>
@@ -292,23 +316,28 @@ export default function InboxPage() {
                                             {conv.category && conv.category !== 'uncategorized' && (
                                                 <span style={{ fontSize: 9, background: 'var(--color-border)', padding: '1px 6px', borderRadius: 10, color: 'var(--color-text-muted)' }}>{conv.category}</span>
                                             )}
-                                            {conv.campaignName && (
+                                            {conv.campaignName && activeTab === 'chats' && (
                                                 <span style={{ fontSize: 9, background: 'var(--color-success)', padding: '1px 6px', borderRadius: 10, color: '#fff' }}>📢 {conv.campaignName}</span>
                                             )}
                                             {conv.deviceName && (
                                                 <span style={{ fontSize: 9, background: 'var(--color-accent-soft)', padding: '1px 6px', borderRadius: 10, color: 'var(--color-accent)' }}>via {conv.deviceName}</span>
                                             )}
-                                        </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <p style={{ fontSize: 'var(--text-xs)', color: conv.unread > 0 ? 'var(--color-text-primary)' : 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: conv.unread > 0 ? 500 : 400, flex: 1, paddingRight: 8 }}>
-                                                {conv.lastMessage}
-                                            </p>
-                                            {conv.unread > 0 && (
-                                                <span style={{ background: 'var(--color-accent)', color: 'white', borderRadius: '10px', padding: '2px 6px', fontSize: 10, fontWeight: 700, minWidth: 20, textAlign: 'center' }}>
-                                                    {conv.unread}
-                                                </span>
+                                            {activeTab === 'status' && (
+                                                <span style={{ fontSize: 9, background: 'var(--color-primary-soft)', padding: '1px 6px', borderRadius: 10, color: 'var(--color-primary)' }}>{conv.statuses?.length || 0} Status</span>
                                             )}
                                         </div>
+                                        {activeTab === 'chats' && (
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <p style={{ fontSize: 'var(--text-xs)', color: (conv.unread || 0) > 0 ? 'var(--color-text-primary)' : 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: (conv.unread || 0) > 0 ? 500 : 400, flex: 1, paddingRight: 8 }}>
+                                                    {conv.lastMessage}
+                                                </p>
+                                                {(conv.unread || 0) > 0 && (
+                                                    <span style={{ background: 'var(--color-accent)', color: 'white', borderRadius: '10px', padding: '2px 6px', fontSize: 10, fontWeight: 700, minWidth: 20, textAlign: 'center' }}>
+                                                        {conv.unread}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -353,82 +382,116 @@ export default function InboxPage() {
                         </div>
                     </div>
 
-                    {/* Messages */}
+                    {/* Messages / Status Content */}
                     <div style={{
                         flex: 1, overflowY: 'auto', padding: 'var(--space-4)',
                         background: 'var(--color-bg-primary)',
                         display: 'flex', flexDirection: 'column', gap: 'var(--space-2)'
                     }}>
-                        {messages.length === 0 && (
-                            <div style={{ textAlign: 'center', padding: 'var(--space-8)', color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>
-                                Belum ada pesan
+                        {activeTab === 'chats' ? (
+                            <>
+                                {messages.length === 0 && (
+                                    <div style={{ textAlign: 'center', padding: 'var(--space-8)', color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>
+                                        Belum ada pesan
+                                    </div>
+                                )}
+                                {messages.map(msg => (
+                                    <div key={msg.id} style={{ display: 'flex', justifyContent: msg.direction === 'outbound' ? 'flex-end' : 'flex-start' }} className="group">
+                                        {msg.direction === 'outbound' && (
+                                            <button 
+                                                onClick={() => handleDeleteMessage(msg.id)}
+                                                className="btn btn-ghost btn-sm btn-icon" 
+                                                style={{ opacity: 0, transition: 'opacity 0.2s', color: 'var(--color-danger)', marginRight: 4, alignSelf: 'center' }}
+                                                title="Hapus Pesan"
+                                            >
+                                                <Trash2 size={14} />
+                                            </button>
+                                        )}
+                                        <div style={{ maxWidth: '65%' }}>
+                                            {msg.is_from_bot && (
+                                                <div style={{ fontSize: 10, color: 'var(--color-accent)', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 3 }}>
+                                                    <Bot size={10} /> AI Auto-Reply
+                                                </div>
+                                            )}
+                                            <div style={{
+                                                padding: 'var(--space-2) var(--space-3)',
+                                                borderRadius: msg.direction === 'outbound' ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
+                                                background: msg.direction === 'outbound'
+                                                    ? (msg.is_from_bot ? 'rgba(108,99,255,0.85)' : 'var(--color-accent)')
+                                                    : 'var(--color-bg-elevated)',
+                                                color: msg.direction === 'outbound' ? 'white' : 'var(--color-text-primary)',
+                                                fontSize: 'var(--text-sm)', lineHeight: 1.5,
+                                                whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                                                opacity: msg.id.startsWith('opt-') ? 0.7 : 1,
+                                            }}>
+                                                {msg.content}
+                                            </div>
+                                            <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 2, textAlign: msg.direction === 'outbound' ? 'right' : 'left' }}>
+                                                {formatTime(msg.created_at)}{msg.id.startsWith('opt-') ? ' · mengirim...' : ''}
+                                            </div>
+                                        </div>
+                                        {msg.direction === 'inbound' && (
+                                            <button 
+                                                onClick={() => handleDeleteMessage(msg.id)}
+                                                className="btn btn-ghost btn-sm btn-icon" 
+                                                style={{ opacity: 0, transition: 'opacity 0.2s', color: 'var(--color-danger)', marginLeft: 4, alignSelf: 'center' }}
+                                                title="Hapus Pesan"
+                                            >
+                                                <Trash2 size={14} />
+                                            </button>
+                                        )}
+                                    </div>
+                                ))}
+                                <div ref={messagesEndRef} />
+                            </>
+                        ) : (
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 'var(--space-4)' }}>
+                                {selectedConv?.statuses?.map((msg: any) => (
+                                    <div key={msg.id} style={{
+                                        background: 'var(--color-bg-elevated)',
+                                        borderRadius: 'var(--radius-xl)',
+                                        padding: 'var(--space-4)',
+                                        boxShadow: 'var(--shadow-sm)',
+                                        border: '1px solid var(--color-border)',
+                                        display: 'flex', flexDirection: 'column', gap: 'var(--space-2)',
+                                        position: 'relative',
+                                        overflow: 'hidden'
+                                    }}>
+                                        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: 'var(--color-accent)', opacity: 0.5 }} />
+                                        <div style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>
+                                            {formatTime(msg.created_at)}
+                                        </div>
+                                        <div style={{ fontSize: 'var(--text-sm)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', flex: 1 }}>
+                                            {msg.content || '[Media Status]'}
+                                        </div>
+                                    </div>
+                                ))}
+                                {(!selectedConv?.statuses || selectedConv.statuses.length === 0) && (
+                                    <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 'var(--space-8)', color: 'var(--color-text-muted)' }}>
+                                        Tidak ada status tersedia
+                                    </div>
+                                )}
                             </div>
                         )}
-                        {messages.map(msg => (
-                            <div key={msg.id} style={{ display: 'flex', justifyContent: msg.direction === 'outbound' ? 'flex-end' : 'flex-start' }} className="group">
-                                {msg.direction === 'outbound' && (
-                                    <button 
-                                        onClick={() => handleDeleteMessage(msg.id)}
-                                        className="btn btn-ghost btn-sm btn-icon" 
-                                        style={{ opacity: 0, transition: 'opacity 0.2s', color: 'var(--color-danger)', marginRight: 4, alignSelf: 'center' }}
-                                        title="Hapus Pesan"
-                                    >
-                                        <Trash2 size={14} />
-                                    </button>
-                                )}
-                                <div style={{ maxWidth: '65%' }}>
-                                    {msg.is_from_bot && (
-                                        <div style={{ fontSize: 10, color: 'var(--color-accent)', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 3 }}>
-                                            <Bot size={10} /> AI Auto-Reply
-                                        </div>
-                                    )}
-                                    <div style={{
-                                        padding: 'var(--space-2) var(--space-3)',
-                                        borderRadius: msg.direction === 'outbound' ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
-                                        background: msg.direction === 'outbound'
-                                            ? (msg.is_from_bot ? 'rgba(108,99,255,0.85)' : 'var(--color-accent)')
-                                            : 'var(--color-bg-elevated)',
-                                        color: msg.direction === 'outbound' ? 'white' : 'var(--color-text-primary)',
-                                        fontSize: 'var(--text-sm)', lineHeight: 1.5,
-                                        whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                                        opacity: msg.id.startsWith('opt-') ? 0.7 : 1,
-                                    }}>
-                                        {msg.content}
-                                    </div>
-                                    <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 2, textAlign: msg.direction === 'outbound' ? 'right' : 'left' }}>
-                                        {formatTime(msg.created_at)}{msg.id.startsWith('opt-') ? ' · mengirim...' : ''}
-                                    </div>
-                                </div>
-                                {msg.direction === 'inbound' && (
-                                    <button 
-                                        onClick={() => handleDeleteMessage(msg.id)}
-                                        className="btn btn-ghost btn-sm btn-icon" 
-                                        style={{ opacity: 0, transition: 'opacity 0.2s', color: 'var(--color-danger)', marginLeft: 4, alignSelf: 'center' }}
-                                        title="Hapus Pesan"
-                                    >
-                                        <Trash2 size={14} />
-                                    </button>
-                                )}
-                            </div>
-                        ))}
-                        <div ref={messagesEndRef} />
                     </div>
 
                     {/* Input */}
-                    <div style={{ padding: 'var(--space-3) var(--space-4)', borderTop: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', display: 'flex', gap: 'var(--space-2)', alignItems: 'flex-end' }}>
-                        <textarea
-                            className="form-textarea"
-                            style={{ flex: 1, minHeight: 40, maxHeight: 120, resize: 'none', borderRadius: 20, padding: '8px var(--space-4)' }}
-                            placeholder="Ketik pesan... (Enter untuk kirim)"
-                            value={newMessage}
-                            onChange={e => setNewMessage(e.target.value)}
-                            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                            rows={1}
-                        />
-                        <button className="btn btn-primary btn-icon" onClick={handleSend} disabled={sending || !newMessage.trim()} style={{ width: 42, height: 42, borderRadius: '50%', flexShrink: 0 }}>
-                            <Send size={18} />
-                        </button>
-                    </div>
+                    {activeTab === 'chats' && (
+                        <div style={{ padding: 'var(--space-3) var(--space-4)', borderTop: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', display: 'flex', gap: 'var(--space-2)', alignItems: 'flex-end' }}>
+                            <textarea
+                                className="form-textarea"
+                                style={{ flex: 1, minHeight: 40, maxHeight: 120, resize: 'none', borderRadius: 20, padding: '8px var(--space-4)' }}
+                                placeholder="Ketik pesan... (Enter untuk kirim)"
+                                value={newMessage}
+                                onChange={e => setNewMessage(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                                rows={1}
+                            />
+                            <button className="btn btn-primary btn-icon" onClick={handleSend} disabled={sending || !newMessage.trim()} style={{ width: 42, height: 42, borderRadius: '50%', flexShrink: 0 }}>
+                                <Send size={18} />
+                            </button>
+                        </div>
+                    )}
                 </div>
             ) : (
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 'var(--space-4)', color: 'var(--color-text-muted)' }}>

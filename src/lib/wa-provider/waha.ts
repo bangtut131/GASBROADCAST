@@ -213,6 +213,7 @@ export class WAHAProvider implements WAProvider {
                 data: {
                     messageId: payload.payload?.id,
                     from: payload.payload?.from?.replace('@c.us', ''),
+                    author: payload.payload?.author?.replace('@c.us', ''),
                     body: payload.payload?.body,
                     messageType: payload.payload?.type,
                     timestamp: payload.payload?.timestamp,

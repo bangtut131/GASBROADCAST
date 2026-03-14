@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
         let query = supabase
             .from('messages')
             .select('*, contact:contacts(name, phone, tags), device:devices(id, name)')
+            .neq('message_type', 'status')
             .order('created_at', { ascending: false });
             
         if (assignedDevices.length > 0) {

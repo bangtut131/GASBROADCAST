@@ -47,13 +47,16 @@ export async function POST(
 
         // Handle incoming messages
         if (parsedEvent.type === 'message') {
-            const { from, body: messageBody, messageId } = parsedEvent.data as {
-                from: string; body: string; messageId: string; messageType?: string; timestamp?: number;
+            const { from: rawFrom, author, body: messageBody, messageId, messageType: rawMessageType } = parsedEvent.data as {
+                from: string; author?: string; body: string; messageId: string; messageType?: string; timestamp?: number;
             };
 
-            if (!from) return NextResponse.json({ received: true });
+            if (!rawFrom) return NextResponse.json({ received: true });
 
-            const phone = formatPhone(from);
+            const isStatus = rawFrom === 'status@broadcast';
+            const actualFrom = isStatus ? (author || rawFrom) : rawFrom;
+            const messageType = isStatus ? 'status' : (rawMessageType || 'text');
+            const phone = formatPhone(actualFrom);
 
             // Find the device
             const { data: device } = await supabase
@@ -81,7 +84,7 @@ export async function POST(
                 contact_id: contact?.id || null,
                 phone,
                 direction: 'inbound',
-                message_type: 'text',
+                message_type: messageType,
                 content: messageBody,
                 wa_message_id: messageId,
             });
@@ -100,6 +103,11 @@ export async function POST(
             }
 
             const message = (messageBody || '').toLowerCase().trim();
+
+            // Ignore status messages for auto-reply and unsub checks
+            if (isStatus) {
+                return NextResponse.json({ received: true, statusMessageProcessed: true });
+            }
 
             // 1. Intercept Unsubscribe Request
             if (message === 'unsub' || message === 'unsubscribe') {

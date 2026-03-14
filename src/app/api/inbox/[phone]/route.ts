@@ -17,6 +17,7 @@ export async function GET(
             .from('messages')
             .select('*')
             .eq('phone', decodeURIComponent(phone))
+            .neq('message_type', 'status')
             .order('created_at', { ascending: true })
             .limit(100);
 
