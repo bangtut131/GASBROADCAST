@@ -159,7 +159,20 @@ export async function POST(request: NextRequest) {
             if (msgError) {
                 console.error('[Webhook wa-web] Message insert error:', msgError.message);
             } else {
-                console.log(`[Webhook wa-web] ✅ Message saved from ${phone}: "${payload.body.substring(0, 50)}"`);
+                console.log(`[Webhook wa-web] ✅ Message saved from ${phone}: "${payload.body?.substring(0, 50) || '[Media]'}"`);
+                
+                // --- Generate Incoming Message Notification ---
+                try {
+                    await supabase.from('notifications').insert({
+                        tenant_id: device.tenant_id,
+                        device_id: device.id,
+                        title: `Pesan Baru dari ${phone}`,
+                        message: payload.body ? (payload.body.substring(0, 60) + (payload.body.length > 60 ? '...' : '')) : '[Media]',
+                        type: 'incoming_message'
+                    });
+                } catch (notifErr: any) {
+                    console.error('[Webhook wa-web] Failed to generate notification:', notifErr.message);
+                }
             }
 
             return NextResponse.json({ success: true });

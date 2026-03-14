@@ -86,6 +86,19 @@ export async function POST(
                 wa_message_id: messageId,
             });
 
+            // --- Generate Incoming Message Notification ---
+            try {
+                await supabase.from('notifications').insert({
+                    tenant_id: device.tenant_id,
+                    device_id: device.id,
+                    title: `Pesan Baru dari ${phone}`,
+                    message: messageBody ? (messageBody.substring(0, 60) + (messageBody.length > 60 ? '...' : '')) : '[Media]',
+                    type: 'incoming_message'
+                });
+            } catch (notifErr: any) {
+                console.error('[Webhook provider] Failed to generate notification:', notifErr.message);
+            }
+
             const message = (messageBody || '').toLowerCase().trim();
 
             // 1. Intercept Unsubscribe Request
