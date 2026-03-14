@@ -29,7 +29,7 @@ const USER_AGENTS = [
 
 // Find available Chromium executable
 async function getChromiumPath(): Promise<{ executablePath: string; args: string[] }> {
-    // 1. Check environment variable (can be set in Railway)
+    // 1. Check environment variable override
     if (process.env.CHROMIUM_PATH && existsSync(process.env.CHROMIUM_PATH)) {
         return {
             executablePath: process.env.CHROMIUM_PATH,
@@ -37,32 +37,16 @@ async function getChromiumPath(): Promise<{ executablePath: string; args: string
         };
     }
 
-    // 2. Common Linux paths (Railway / Docker)
-    const linuxPaths = [
-        '/usr/bin/chromium-browser',
-        '/usr/bin/chromium',
-        '/usr/bin/google-chrome',
-        '/usr/bin/google-chrome-stable',
-    ];
-    for (const p of linuxPaths) {
-        if (existsSync(p)) {
-            return {
-                executablePath: p,
-                args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--single-process'],
-            };
-        }
-    }
-
-    // 3. Try @sparticuz/chromium (serverless / Vercel)
+    // 2. Try @sparticuz/chromium (works on Railway & serverless)
     try {
         const chromium = (await import('@sparticuz/chromium')).default;
         const execPath = await chromium.executablePath();
-        if (execPath && existsSync(execPath)) {
+        if (execPath) {
             return { executablePath: execPath, args: chromium.args };
         }
     } catch { /* not available */ }
 
-    // 4. Common Windows paths (local dev)
+    // 3. Common Windows paths (local dev only)
     const winPaths = [
         'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
         'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
@@ -77,7 +61,7 @@ async function getChromiumPath(): Promise<{ executablePath: string; args: string
         }
     }
 
-    throw new Error('Tidak dapat menemukan Chromium/Chrome. Set CHROMIUM_PATH di environment variable, atau install chromium-browser di server.');
+    throw new Error('Tidak dapat menemukan Chromium/Chrome. Set CHROMIUM_PATH di environment variable.');
 }
 
 export async function scrapeGoogleMaps(
