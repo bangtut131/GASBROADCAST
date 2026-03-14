@@ -74,7 +74,7 @@ export default function Sidebar({ isAdmin, plan = 'free' }: SidebarProps) {
       {/* Logo */}
       <div className={s.logo}>
         <div className={s.logoIcon}>
-          <img src="/logo.png" alt="GAS Broadcast Logo" style={{ height: collapsed ? '28px' : '32px', width: 'auto', objectFit: 'contain' }} />
+          <img src="/logo.png" alt="GAS Broadcast Logo" style={{ height: collapsed ? '32px' : '44px', width: 'auto', objectFit: 'contain' }} />
         </div>
         {!collapsed && (
           <div className={s.logoTextWrap}>
