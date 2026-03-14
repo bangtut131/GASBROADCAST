@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { PLAN_LIMITS, hasReachedLimit, PlanType } from '@/lib/planLimits';
+import { startBroadcast } from '@/lib/campaign-runner';
 
 // GET /api/campaigns — list campaigns
 export async function GET(request: NextRequest) {
@@ -111,86 +112,5 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true, data: campaign });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-}
-
-async function startBroadcast(supabase: any, campaign: any, tenantId: string) {
-    try {
-        let targets: { phone: string; contact_id?: string }[] = [];
-
-        if (campaign.target_type === 'group' && campaign.target_group_id) {
-            const { data: members } = await supabase
-                .from('contact_group_members')
-                .select('contact:contacts(id, phone)')
-                .eq('group_id', campaign.target_group_id);
-            targets = (members || [])
-                .map((m: any) => ({ phone: m.contact?.phone, contact_id: m.contact?.id }))
-                .filter((t: any) => t.phone);
-        } else if (campaign.target_type === 'manual' && campaign.target_phones) {
-            // Find existing contacts to link contact_id for {name} parsing
-            const { data: existingContacts } = await supabase
-                .from('contacts')
-                .select('id, phone')
-                .eq('tenant_id', tenantId)
-                .in('phone', campaign.target_phones);
-            
-            targets = campaign.target_phones.map((p: string) => {
-                const match = existingContacts?.find((c: any) => c.phone === p);
-                return { phone: p, contact_id: match?.id };
-            });
-        }
-
-        if (targets.length === 0) return;
-
-        // Deduplicate Targets (Remove duplicates)
-        const uniqueTargetsMap = new Map();
-        for (const t of targets) {
-            if (t.phone && !uniqueTargetsMap.has(t.phone)) {
-                uniqueTargetsMap.set(t.phone, t);
-            }
-        }
-        targets = Array.from(uniqueTargetsMap.values());
-
-        // Skip blacklisted phones
-        const phonesToCheck = targets.map((t: any) => t.phone);
-        const { data: blacklisted } = await supabase
-            .from('blacklisted_contacts')
-            .select('phone')
-            .eq('tenant_id', tenantId)
-            .in('phone', phonesToCheck);
-            
-        const blacklistedPhones = new Set((blacklisted || []).map((b: any) => b.phone));
-
-        // Create broadcast_messages records (pending / failed for blacklisted)
-        let messages = [];
-        for (const t of targets) {
-            const isBlacklisted = blacklistedPhones.has(t.phone);
-            messages.push({
-                campaign_id: campaign.id,
-                contact_id: t.contact_id || null,
-                phone: t.phone,
-                status: isBlacklisted ? 'failed' : 'pending',
-                error_message: isBlacklisted ? 'BLACKLISTED' : null
-            });
-        }
-
-        if (messages.length === 0) return;
-
-        await supabase.from('broadcast_messages').insert(messages);
-
-        // Calculate actual failed vs total
-        const initialFailed = messages.filter(m => m.status === 'failed').length;
-
-        // Update total_recipients in campaigns
-        await supabase
-            .from('campaigns')
-            .update({ 
-                total_recipients: targets.length, 
-                failed_count: initialFailed,
-                status: initialFailed === targets.length ? 'completed' : 'running'
-            })
-            .eq('id', campaign.id);
-    } catch (err) {
-        console.error('startBroadcast error:', err);
     }
 }
