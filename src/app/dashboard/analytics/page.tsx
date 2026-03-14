@@ -5,9 +5,22 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
     LineChart, Line, PieChart, Pie, Cell, Legend, AreaChart, Area
 } from 'recharts';
-import { TrendingUp, Users, Send, MessageSquare, Target, Activity, Loader2 } from 'lucide-react';
+import { TrendingUp, Users, Send, MessageSquare, Target, Activity, Loader2, Inbox, Bot } from 'lucide-react';
 
 const COLORS = ['#6C63FF', '#25D366', '#3B82F6', '#F59E0B', '#EF4444'];
+
+interface AnalyticsData {
+    campaignStats: { name: string; sent: number; failed: number; total: number }[];
+    messageVolume: { date: string; inbound: number; outbound: number }[];
+    contactGrowth: { date: string; total: number }[];
+    statusDistribution: { name: string; value: number }[];
+    summary: {
+        totalMessages: number;
+        totalCampaigns: number;
+        totalContacts: number;
+        avgDeliveryRate: number;
+    };
+}
 
 interface InboxData {
     volume: { date: string; inbound: number; outbound: number }[];
@@ -51,6 +64,8 @@ export default function AnalyticsPage() {
 
     const summary = data?.summary || { totalMessages: 0, totalCampaigns: 0, totalContacts: 0, avgDeliveryRate: 0 };
 
+    return (
+        <div>
             <div className="page-header" style={{ marginBottom: 'var(--space-4)' }}>
                 <div>
                     <h1 className="page-title">Analytics</h1>
@@ -96,8 +111,6 @@ export default function AnalyticsPage() {
     function renderCampaignView() {
         return (
             <>
-
-            {/* Summary Cards */}
             <div className="grid grid-cols-4" style={{ marginBottom: 'var(--space-6)' }}>
                 {[
                     { label: 'Total Pesan', value: summary.totalMessages.toLocaleString(), icon: <MessageSquare size={20} />, color: 'var(--color-accent)', bg: 'var(--color-accent-soft)' },
@@ -189,7 +202,7 @@ export default function AnalyticsPage() {
                         <ResponsiveContainer width="100%" height={220}>
                             <PieChart>
                                 <Pie data={data.statusDistribution} cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={3} dataKey="value">
-                                    {data.statusDistribution.map((_, index) => (
+                                    {data.statusDistribution.map((_: any, index: number) => (
                                         <Cell key={index} fill={COLORS[index % COLORS.length]} />
                                     ))}
                                 </Pie>
@@ -199,6 +212,7 @@ export default function AnalyticsPage() {
                         </ResponsiveContainer>
                     )}
                 </div>
+            </div>
             </>
         );
     }
@@ -297,8 +311,8 @@ export default function AnalyticsPage() {
                         ) : (
                             <ResponsiveContainer width="100%" height={220}>
                                 <PieChart>
-                                    <Pie data={inboxData.deviceLoad} cx="50%" cy="50%" outerRadius={90} dataKey="value" label={({name, percent}) => `${name} (${(percent * 100).toFixed(0)}%)`}>
-                                        {inboxData.deviceLoad.map((_, index) => (
+                                    <Pie data={inboxData.deviceLoad} cx="50%" cy="50%" outerRadius={90} dataKey="value" label={({name, percent}) => `${name} (${((percent || 0) * 100).toFixed(0)}%)`}>
+                                        {inboxData.deviceLoad.map((_: any, index: number) => (
                                             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                         ))}
                                     </Pie>
