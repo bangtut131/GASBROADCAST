@@ -201,4 +201,18 @@ export async function processMessagesInBackground(ctx: { id: string, device: any
         status: 'completed',
         completed_at: new Date().toISOString(),
     }).eq('id', id);
+
+    // Generate System Notification
+    try {
+        await bgSupabase.from('notifications').insert({
+            tenant_id: device.tenant_id,
+            device_id: device.id,
+            campaign_id: id,
+            title: `Broadcast Selesai: ${campaign.name}`,
+            message: `Pengiriman broadcast ke ${campaign.total_recipients || 0} kontak telah selesai.`,
+            type: 'campaign_completed'
+        });
+    } catch (notifErr) {
+        console.error('[CampaignRunner] Failed to generate notification:', notifErr);
+    }
 }

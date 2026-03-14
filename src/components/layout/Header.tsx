@@ -9,10 +9,10 @@ import {
     ChevronDown,
     User,
     Settings,
-    LogOut,
-    Moon,
+    LogOut
 } from 'lucide-react';
 import type { Profile, Tenant } from '@/types';
+import { formatTimeAgo } from '@/lib/utils';
 
 interface HeaderProps {
     profile: Profile | null;
@@ -21,9 +21,30 @@ interface HeaderProps {
 
 export default function Header({ profile, tenant }: HeaderProps) {
     const [showUserMenu, setShowUserMenu] = useState(false);
+    const [showNotifMenu, setShowNotifMenu] = useState(false);
+    const [notifications, setNotifications] = useState<any[]>([]);
+    
     const menuRef = useRef<HTMLDivElement>(null);
+    const notifRef = useRef<HTMLDivElement>(null);
     const router = useRouter();
     const supabase = createClient();
+
+    useEffect(() => {
+        // Fetch Notifications
+        const fetchNotifications = async () => {
+            try {
+                const res = await fetch('/api/notifications');
+                const result = await res.json();
+                if (result.success) {
+                    setNotifications(result.data || []);
+                }
+            } catch (err) {
+                console.error('Failed to fetch notifications', err);
+            }
+        };
+
+        if (tenant) fetchNotifications();
+    }, [tenant]);
 
     // Close menu on outside click
     useEffect(() => {
@@ -31,10 +52,34 @@ export default function Header({ profile, tenant }: HeaderProps) {
             if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
                 setShowUserMenu(false);
             }
+            if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+                setShowNotifMenu(false);
+            }
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
+
+    const handleMarkAsRead = async (id?: string) => {
+        try {
+            const body = id ? { id } : { markAllRead: true };
+            const res = await fetch('/api/notifications', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const result = await res.json();
+            if (result.success) {
+                if (id) {
+                    setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
+                } else {
+                    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+                }
+            }
+        } catch (err) {
+            console.error('Failed to mark read', err);
+        }
+    };
 
     const handleLogout = async () => {
         await supabase.auth.signOut();
@@ -45,6 +90,8 @@ export default function Header({ profile, tenant }: HeaderProps) {
     const initials = profile?.full_name
         ? profile.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
         : 'U';
+
+    const unreadCount = notifications.filter(n => !n.is_read).length;
 
     return (
         <header className="topbar">
@@ -68,9 +115,70 @@ export default function Header({ profile, tenant }: HeaderProps) {
                 </a>
 
                 {/* Notifications */}
-                <button className="btn btn-ghost btn-icon btn-sm" title="Notifikasi">
-                    <Bell size={18} />
-                </button>
+                <div className="dropdown" ref={notifRef}>
+                    <button 
+                        className="btn btn-ghost btn-icon btn-sm notif-btn" 
+                        title="Notifikasi"
+                        onClick={() => {
+                            setShowNotifMenu(!showNotifMenu);
+                            setShowUserMenu(false);
+                        }}
+                    >
+                        <Bell size={18} />
+                        {unreadCount > 0 && (
+                            <span className="notif-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>
+                        )}
+                    </button>
+
+                    {showNotifMenu && (
+                        <div className="dropdown-menu notif-dropdown">
+                            <div className="dropdown-header" style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span className="dropdown-header-name">Notifikasi</span>
+                                {unreadCount > 0 && (
+                                    <button 
+                                        className="btn btn-ghost btn-xs text-primary" 
+                                        onClick={() => handleMarkAsRead()}
+                                        style={{ fontSize: '11px', padding: '0 4px' }}
+                                    >
+                                        Tandai semua dibaca
+                                    </button>
+                                )}
+                            </div>
+                            <div className="dropdown-divider" style={{ marginTop: 0 }} />
+                            
+                            <div className="notif-list">
+                                {notifications.length > 0 ? (
+                                    notifications.map(notif => (
+                                        <div 
+                                            key={notif.id} 
+                                            className={`notif-item ${notif.is_read ? 'read' : 'unread'}`}
+                                            onClick={() => !notif.is_read && handleMarkAsRead(notif.id)}
+                                        >
+                                            <div className="notif-content">
+                                                <span className="notif-title">{notif.title}</span>
+                                                <p className="notif-message">{notif.message}</p>
+                                                <span className="notif-time">{formatTimeAgo(notif.created_at)}</span>
+                                            </div>
+                                            {!notif.is_read && <div className="notif-dot" />}
+                                        </div>
+                                    ))
+                                ) : (
+                                    <div className="notif-empty">
+                                        <Bell size={24} style={{ opacity: 0.2, marginBottom: '8px' }} />
+                                        <p>Tidak ada notifikasi</p>
+                                    </div>
+                                )}
+                            </div>
+                            
+                            <div className="dropdown-divider" style={{ marginBottom: 0 }} />
+                            <div className="dropdown-footer">
+                                <button className="btn btn-ghost btn-sm" style={{ width: '100%', fontSize: '12px' }} onClick={() => setShowNotifMenu(false)}>
+                                    Tutup
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
 
                 {/* User Menu */}
                 <div className="dropdown" ref={menuRef}>
@@ -218,6 +326,91 @@ export default function Header({ profile, tenant }: HeaderProps) {
         .dropdown-item:hover {
           background: var(--color-bg-hover);
           color: var(--color-text-primary);
+        }
+        .notif-btn {
+          position: relative;
+        }
+        .notif-badge {
+          position: absolute;
+          top: 2px;
+          right: 2px;
+          background: var(--color-danger);
+          color: white;
+          font-size: 10px;
+          font-weight: bold;
+          border-radius: 10px;
+          padding: 0 4px;
+          min-width: 14px;
+          height: 14px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border: 2px solid var(--color-bg-secondary);
+        }
+        .notif-dropdown {
+          width: 320px;
+          padding: 0;
+          overflow: hidden;
+        }
+        .notif-list {
+          max-height: 350px;
+          overflow-y: auto;
+        }
+        .notif-empty {
+          padding: var(--space-6);
+          text-align: center;
+          color: var(--color-text-muted);
+          font-size: var(--text-sm);
+        }
+        .notif-item {
+          padding: var(--space-3);
+          border-bottom: 1px solid var(--color-border);
+          display: flex;
+          gap: var(--space-2);
+          cursor: pointer;
+          transition: background 0.15s;
+        }
+        .notif-item:last-child {
+          border-bottom: none;
+        }
+        .notif-item:hover {
+          background: var(--color-bg-hover);
+        }
+        .notif-item.unread {
+          background: rgba(var(--color-primary-rgb), 0.05);
+        }
+        .notif-content {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+        .notif-title {
+          font-size: var(--text-sm);
+          font-weight: var(--font-weight-semibold);
+          color: var(--color-text-primary);
+        }
+        .notif-message {
+          font-size: var(--text-xs);
+          color: var(--color-text-secondary);
+          margin: 0;
+          line-height: 1.4;
+        }
+        .notif-time {
+          font-size: 11px;
+          color: var(--color-text-muted);
+          margin-top: 4px;
+        }
+        .notif-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: var(--color-primary);
+          margin-top: 6px;
+        }
+        .dropdown-footer {
+          padding: var(--space-1);
+          background: var(--color-bg-secondary);
         }
       `}</style>
         </header>
