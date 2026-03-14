@@ -14,3 +14,25 @@ export function formatTimeAgo(dateString: string): string {
         year: 'numeric'
     });
 }
+
+/**
+ * Converts a standard Google Drive sharing link into a direct download link.
+ * Used for Baileys image/document attachments which require direct raw files.
+ */
+export function convertGDriveLink(url: string): string {
+    if (!url || !url.includes('drive.google.com')) return url;
+
+    // Pattern 1: /file/d/FILE_ID/view
+    const fileIdMatch = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+    if (fileIdMatch && fileIdMatch[1]) {
+        return `https://drive.google.com/uc?export=download&id=${fileIdMatch[1]}`;
+    }
+
+    // Pattern 2: ?id=FILE_ID
+    const idParamMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (idParamMatch && idParamMatch[1]) {
+        return `https://drive.google.com/uc?export=download&id=${idParamMatch[1]}`;
+    }
+
+    return url;
+}

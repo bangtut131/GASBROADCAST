@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { getProvider, personalizeMessage, formatPhone } from '@/lib/wa-provider';
+import { convertGDriveLink } from '@/lib/utils';
 
 /**
  * Step 1: Generates the target list and creates pending 'broadcast_messages' records.
@@ -140,12 +141,14 @@ export async function processMessagesInBackground(ctx: { id: string, device: any
             const to = formatPhone(msg.phone);
 
             let result;
-            if (campaign.media_type === 'image' && campaign.media_url) {
-                result = await provider.sendImage(device.session_id, to, campaign.media_url, personalized);
-            } else if (campaign.media_type === 'video' && campaign.media_url) {
-                result = await provider.sendVideo(device.session_id, to, campaign.media_url, personalized);
-            } else if (campaign.media_type === 'document' && campaign.media_url) {
-                result = await provider.sendDocument(device.session_id, to, campaign.media_url, 'document');
+            const finalMediaUrl = campaign.media_url ? convertGDriveLink(campaign.media_url) : null;
+
+            if (campaign.media_type === 'image' && finalMediaUrl) {
+                result = await provider.sendImage(device.session_id, to, finalMediaUrl, personalized);
+            } else if (campaign.media_type === 'video' && finalMediaUrl) {
+                result = await provider.sendVideo(device.session_id, to, finalMediaUrl, personalized);
+            } else if (campaign.media_type === 'document' && finalMediaUrl) {
+                result = await provider.sendDocument(device.session_id, to, finalMediaUrl, 'document');
             } else {
                 result = await provider.sendText(device.session_id, to, personalized);
             }

@@ -606,7 +606,9 @@ export default function CreateBroadcastPage() {
                                             value={mediaUrl}
                                             onChange={e => setMediaUrl(e.target.value)}
                                         />
-                                        <span className="form-hint">URL harus bisa diakses publik oleh WhatsApp</span>
+                                        <span className="form-hint" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                            URL harus bisa diakses publik (Mendukung link sharing Google Drive 📁)
+                                        </span>
                                     </div>
                                 )}
                             </div>

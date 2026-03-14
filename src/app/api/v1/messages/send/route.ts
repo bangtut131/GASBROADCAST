@@ -40,14 +40,16 @@ export async function POST(request: NextRequest) {
 
         const provider = getProvider(device.provider, device.provider_config as Record<string, string>);
         const formattedTo = formatPhone(to);
+        const { convertGDriveLink } = require('@/lib/utils'); // lazy import due to scope
 
         let result;
-        if (media_type === 'image' && media_url) {
-            result = await provider.sendImage(device.session_id, formattedTo, media_url, message);
-        } else if (media_type === 'document' && media_url) {
-            result = await provider.sendDocument(device.session_id, formattedTo, media_url, 'document');
-        } else if (media_type === 'video' && media_url) {
-            result = await provider.sendVideo(device.session_id, formattedTo, media_url, message);
+        const finalMediaUrl = media_url ? convertGDriveLink(media_url) : null;
+        if (media_type === 'image' && finalMediaUrl) {
+            result = await provider.sendImage(device.session_id, formattedTo, finalMediaUrl, message);
+        } else if (media_type === 'document' && finalMediaUrl) {
+            result = await provider.sendDocument(device.session_id, formattedTo, finalMediaUrl, 'document');
+        } else if (media_type === 'video' && finalMediaUrl) {
+            result = await provider.sendVideo(device.session_id, formattedTo, finalMediaUrl, message);
         } else {
             result = await provider.sendText(device.session_id, formattedTo, message);
         }
