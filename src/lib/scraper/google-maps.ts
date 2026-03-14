@@ -1,5 +1,5 @@
-import chromium from '@sparticuz/chromium';
 import puppeteer from 'puppeteer-core';
+import { existsSync } from 'fs';
 
 export interface ScrapedBusiness {
     name: string;
@@ -27,6 +27,59 @@ const USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
 ];
 
+// Find available Chromium executable
+async function getChromiumPath(): Promise<{ executablePath: string; args: string[] }> {
+    // 1. Check environment variable (can be set in Railway)
+    if (process.env.CHROMIUM_PATH && existsSync(process.env.CHROMIUM_PATH)) {
+        return {
+            executablePath: process.env.CHROMIUM_PATH,
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--single-process'],
+        };
+    }
+
+    // 2. Common Linux paths (Railway / Docker)
+    const linuxPaths = [
+        '/usr/bin/chromium-browser',
+        '/usr/bin/chromium',
+        '/usr/bin/google-chrome',
+        '/usr/bin/google-chrome-stable',
+    ];
+    for (const p of linuxPaths) {
+        if (existsSync(p)) {
+            return {
+                executablePath: p,
+                args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--single-process'],
+            };
+        }
+    }
+
+    // 3. Try @sparticuz/chromium (serverless / Vercel)
+    try {
+        const chromium = (await import('@sparticuz/chromium')).default;
+        const execPath = await chromium.executablePath();
+        if (execPath && existsSync(execPath)) {
+            return { executablePath: execPath, args: chromium.args };
+        }
+    } catch { /* not available */ }
+
+    // 4. Common Windows paths (local dev)
+    const winPaths = [
+        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+        process.env.LOCALAPPDATA + '\\Google\\Chrome\\Application\\chrome.exe',
+    ];
+    for (const p of winPaths) {
+        if (p && existsSync(p)) {
+            return {
+                executablePath: p,
+                args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+            };
+        }
+    }
+
+    throw new Error('Tidak dapat menemukan Chromium/Chrome. Set CHROMIUM_PATH di environment variable, atau install chromium-browser di server.');
+}
+
 export async function scrapeGoogleMaps(
     query: string,
     maxResults: number = 40
@@ -35,18 +88,12 @@ export async function scrapeGoogleMaps(
 
     try {
         const userAgent = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+        const { executablePath, args } = await getChromiumPath();
 
         browser = await puppeteer.launch({
-            args: [
-                ...chromium.args,
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu',
-                '--single-process',
-            ],
+            args,
             defaultViewport: { width: 1366, height: 768 },
-            executablePath: await chromium.executablePath(),
+            executablePath,
             headless: true,
         });
 
