@@ -51,8 +51,8 @@
 }
 
 .logoIcon {
-    width: 48px;
-    height: 48px;
+    width: auto;
+    height: auto;
     display: flex;
     align-items: center;
     justify-content: center;

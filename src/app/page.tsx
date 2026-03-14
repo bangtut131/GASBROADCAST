@@ -1,5 +1,4 @@
 import Link from 'next/link';
-import Image from 'next/image';
 import { MessageSquare, Send, Bot, Users, Smartphone, BarChart3, Zap, Shield, Code, ArrowRight, Check } from 'lucide-react';
 
 export default function LandingPage() {
@@ -9,8 +8,8 @@ export default function LandingPage() {
       <nav className="landing-nav">
         <div className="landing-nav-inner">
           <div className="landing-nav-brand">
-            <div className="landing-logo-icon" style={{ background: 'transparent', width: 56, height: 56 }}>
-              <Image src="/logo.png" alt="GAS Broadcast Logo" width={56} height={56} style={{ objectFit: 'contain' }} priority unoptimized />
+            <div className="landing-logo-icon" style={{ background: 'transparent' }}>
+              <img src="/logo.png" alt="GAS Broadcast Logo" style={{ height: '48px', width: 'auto', maxWidth: '100%', objectFit: 'contain' }} />
             </div>
             <span className="landing-logo-text">GAS Smart Broadcast</span>
           </div>
@@ -171,8 +170,8 @@ export default function LandingPage() {
       <footer className="landing-footer">
         <div className="landing-footer-inner">
           <div className="landing-footer-brand">
-            <div className="landing-logo-icon" style={{ width: 44, height: 44, background: 'transparent' }}>
-              <Image src="/logo.png" alt="GAS Broadcast Logo" width={44} height={44} style={{ objectFit: 'contain' }} unoptimized />
+            <div className="landing-logo-icon" style={{ background: 'transparent' }}>
+              <img src="/logo.png" alt="GAS Broadcast Logo" style={{ height: '40px', width: 'auto', maxWidth: '100%', objectFit: 'contain' }} />
             </div>
             <span className="landing-logo-text">GAS Smart Broadcast</span>
           </div>

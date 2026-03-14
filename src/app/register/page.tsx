@@ -4,8 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
-import Image from 'next/image';
-import { MessageSquare, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
 
 export default function RegisterPage() {
   const [fullName, setFullName] = useState('');
@@ -102,8 +101,8 @@ export default function RegisterPage() {
         <div className="auth-branding">
           <div className="auth-branding-content">
             <div className="auth-logo">
-              <div className="auth-logo-icon" style={{ background: 'transparent', width: 96, height: 96 }}>
-                <Image src="/logo.png" alt="GAS Broadcast Logo" width={96} height={96} style={{ objectFit: 'contain' }} priority unoptimized />
+              <div className="auth-logo-icon" style={{ background: 'transparent' }}>
+                <img src="/logo.png" alt="GAS Broadcast Logo" style={{ height: '110px', width: 'auto', maxWidth: '100%', objectFit: 'contain' }} />
               </div>
               <span className="auth-logo-text">GAS Smart Broadcast</span>
             </div>
