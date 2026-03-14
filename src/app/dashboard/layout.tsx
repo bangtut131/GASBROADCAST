@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import Sidebar from '@/components/layout/Sidebar';
 import Header from '@/components/layout/Header';
+import TrialExpiredOverlay from '@/components/dashboard/TrialExpiredOverlay';
 import type { Profile, Tenant } from '@/types';
 
 export default async function DashboardLayout({
@@ -40,13 +41,33 @@ export default async function DashboardLayout({
     // Get the plan (default 'free')
     const plan = (tenant?.plan || 'free').toLowerCase();
 
+    // Calculate trial expiration (20 days for free plan)
+    let isTrialExpired = false;
+    let daysRemaining = 20;
+
+    if (plan === 'free' && tenant?.created_at && !isAdmin) {
+        const createdAt = new Date(tenant.created_at);
+        const now = new Date();
+        const diffTime = Math.abs(now.getTime() - createdAt.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        daysRemaining = Math.max(0, 20 - diffDays);
+        if (diffDays > 20) {
+            isTrialExpired = true;
+        }
+    }
+
     return (
         <div className="dashboard-layout">
             <Sidebar isAdmin={isAdmin} plan={plan} />
             <div className="dashboard-main">
                 <Header profile={profile as Profile} tenant={tenant as Tenant} />
                 <main className="dashboard-content">
-                    {children}
+                    {isTrialExpired ? (
+                        <TrialExpiredOverlay />
+                    ) : (
+                        children
+                    )}
                 </main>
             </div>
 
