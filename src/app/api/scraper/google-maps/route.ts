@@ -2,8 +2,21 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { scrapeGoogleMaps } from '@/lib/scraper/google-maps';
 
-// Extend timeout to 5 minutes for scraping
+// Extend timeout to 5 minutes for scraping (Vercel only)
 export const maxDuration = 300;
+
+// Timeout wrapper — ensures the request always returns within a time limit
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            reject(new Error(`Timeout: ${label} melebihi ${Math.round(ms / 1000)} detik. Coba lagi dengan jumlah hasil lebih sedikit.`));
+        }, ms);
+
+        promise
+            .then(result => { clearTimeout(timer); resolve(result); })
+            .catch(err => { clearTimeout(timer); reject(err); });
+    });
+}
 
 // POST /api/scraper/google-maps — Run scraper
 export async function POST(request: NextRequest) {
@@ -30,7 +43,16 @@ export async function POST(request: NextRequest) {
         // Limit max results to prevent abuse
         const safeMax = Math.min(Math.max(maxResults, 5), 120);
 
-        const { results, error } = await scrapeGoogleMaps(query.trim(), safeMax);
+        console.log(`[Scraper] Starting scrape: "${query.trim()}" max=${safeMax}`);
+
+        // Wrap scraper with 120-second timeout to prevent infinite loading
+        const { results, error } = await withTimeout(
+            scrapeGoogleMaps(query.trim(), safeMax),
+            120_000,
+            'Proses scraping'
+        );
+
+        console.log(`[Scraper] Completed: ${results.length} results, error=${error || 'none'}`);
 
         if (error) {
             return NextResponse.json({ success: false, error, data: results }, { status: 200 });
@@ -42,6 +64,7 @@ export async function POST(request: NextRequest) {
             meta: { query: query.trim(), totalFound: results.length },
         });
     } catch (error: any) {
+        console.error(`[Scraper] Error:`, error.message);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }

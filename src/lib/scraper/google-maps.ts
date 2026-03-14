@@ -73,6 +73,7 @@ export async function scrapeGoogleMaps(
     try {
         const userAgent = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
         const { executablePath, args } = await getChromiumPath();
+        console.log(`[Scraper] Launching browser from: ${executablePath}`);
 
         browser = await puppeteer.launch({
             args,
@@ -80,6 +81,7 @@ export async function scrapeGoogleMaps(
             executablePath,
             headless: true,
         });
+        console.log('[Scraper] Browser launched OK');
 
         const page = await browser.newPage();
 
@@ -113,7 +115,9 @@ export async function scrapeGoogleMaps(
 
         // Navigate to Google Maps search
         const searchUrl = `https://www.google.com/maps/search/${encodeURIComponent(query)}`;
+        console.log(`[Scraper] Navigating to: ${searchUrl}`);
         await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+        console.log('[Scraper] Page loaded');
 
         // Wait for content
         await delay(3000, 5000);
