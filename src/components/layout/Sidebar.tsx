@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useTheme } from '@/components/providers/ThemeProvider';
 import {
   LayoutDashboard,
   Smartphone,
@@ -21,6 +22,8 @@ import {
   Sparkles,
   Crown,
   MapPin,
+  Sun,
+  Moon
 } from 'lucide-react';
 import s from './Sidebar.module.css';
 
@@ -68,6 +71,7 @@ const navSections = [
 export default function Sidebar({ isAdmin, plan = 'free' }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
+  const { theme, toggleTheme } = useTheme();
 
   return (
     <aside className={`${s.sidebar} ${collapsed ? s.sidebarCollapsed : ''}`}>
@@ -139,19 +143,30 @@ export default function Sidebar({ isAdmin, plan = 'free' }: SidebarProps) {
         })}
       </nav>
 
-      {/* Upgrade Banner */}
-      {!collapsed && (
-        <a href="/dashboard/settings" className={s.upgrade} style={{ textDecoration: 'none', cursor: 'pointer' }}>
-          <div className={s.upgradeGlow} />
-          <div className={s.upgradeIcon}>
-            <Sparkles size={18} />
-          </div>
-          <div className={s.upgradeTextWrap}>
-            <span className={s.upgradeTitle}>Kelola Langganan</span>
-            <span className={s.upgradeDesc}>Lihat paket & upgrade</span>
-          </div>
-        </a>
-      )}
+      {/* Bottom Actions Area */}
+      <div className={s.bottomActions}>
+         {/* Theme Toggle */}
+         <button className={s.themeToggle} onClick={toggleTheme} title={theme === 'dark' ? "Mode Terang" : "Mode Gelap"}>
+            <div className={s.navIcon}>
+               {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+            </div>
+            {!collapsed && <span className={s.navLabel} style={{ textAlign: 'left' }}>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>}
+         </button>
+
+         {/* Upgrade Banner */}
+         {!collapsed && (
+           <a href="/dashboard/settings" className={s.upgrade} style={{ textDecoration: 'none', cursor: 'pointer' }}>
+             <div className={s.upgradeGlow} />
+             <div className={s.upgradeIcon}>
+               <Sparkles size={18} />
+             </div>
+             <div className={s.upgradeTextWrap}>
+               <span className={s.upgradeTitle}>Kelola Langganan</span>
+               <span className={s.upgradeDesc}>Lihat paket & upgrade</span>
+             </div>
+           </a>
+         )}
+      </div>
 
       {/* Collapse Toggle */}
       <button
