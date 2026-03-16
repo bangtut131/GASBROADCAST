@@ -193,12 +193,16 @@ export default function InboxPage() {
         }
     }, [selectedPhone, conversations]);
 
-    // Compute unique filters
-    const uniqueCategories = Array.from(new Set(conversations.map(c => c.category))).filter(Boolean);
-    const uniqueDevices = Array.from(new Map(conversations.filter(c => c.deviceId).map(c => [c.deviceId, c.deviceName])).entries());
-    const uniqueCampaigns = Array.from(new Set(conversations.map(c => c.campaignName))).filter(Boolean) as string[];
+    // Separate normal chats from status@broadcast
+    const chatConversations = conversations.filter(c => c.phone !== 'status@broadcast');
 
-    const filtered = (activeTab === 'chats' ? conversations : statusGroups).filter((c: any) => {
+    // Compute unique filters based on active tab
+    const baseConversations = activeTab === 'chats' ? chatConversations : statusGroups;
+    const uniqueCategories = Array.from(new Set(baseConversations.map(c => c.category))).filter(Boolean);
+    const uniqueDevices = Array.from(new Map(baseConversations.filter(c => c.deviceId).map(c => [c.deviceId, c.deviceName])).entries());
+    const uniqueCampaigns = Array.from(new Set(baseConversations.map((c: any) => c.campaignName))).filter(Boolean) as string[];
+
+    const filtered = baseConversations.filter((c: any) => {
         const matchSearch = (c.name || c.phone).toLowerCase().includes(search.toLowerCase());
         const matchCategory = filterCategory === 'all' || c.category === filterCategory;
         const matchDevice = filterDevice === 'all' || c.deviceId === filterDevice;
@@ -206,7 +210,7 @@ export default function InboxPage() {
         return matchSearch && matchCategory && matchDevice && matchCampaign;
     });
 
-    const selectedConv = (activeTab === 'chats' ? conversations : statusGroups).find((c: any) => c.phone === selectedPhone);
+    const selectedConv = baseConversations.find((c: any) => c.phone === selectedPhone);
 
     const formatTime = (iso: string) => {
         const d = new Date(iso);
