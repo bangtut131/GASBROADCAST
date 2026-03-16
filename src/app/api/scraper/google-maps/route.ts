@@ -45,10 +45,10 @@ export async function POST(request: NextRequest) {
 
         console.log(`[Scraper] Starting scrape: "${query.trim()}" max=${safeMax}`);
 
-        // Wrap scraper with 120-second timeout to prevent infinite loading
+        // Wrap scraper with 300-second timeout to prevent infinite loading
         const { results, error } = await withTimeout(
             scrapeGoogleMaps(query.trim(), safeMax),
-            120_000,
+            300_000,
             'Proses scraping'
         );
 
@@ -65,6 +65,7 @@ export async function POST(request: NextRequest) {
         });
     } catch (error: any) {
         console.error(`[Scraper] Error:`, error.message);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        // Return 200 with success: false so the frontend can show the error gracefully
+        return NextResponse.json({ success: false, error: error.message, data: [] }, { status: 200 });
     }
 }

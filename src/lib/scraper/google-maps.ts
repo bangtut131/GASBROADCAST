@@ -82,7 +82,7 @@ export async function scrapeGoogleMaps(
 
         // Navigate to Google Maps search
         const searchUrl = `https://www.google.com/maps/search/${encodeURIComponent(query)}`;
-        await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+        await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
         // Wait for content
         await delay(3000, 5000);
@@ -118,7 +118,7 @@ export async function scrapeGoogleMaps(
                 if (feed) feed.scrollTop = feed.scrollHeight;
             }, feedSelector);
 
-            await delay(2500, 5000);
+            await delay(2000, 4000);
             scrollAttempts++;
         }
 
@@ -206,25 +206,21 @@ export async function scrapeGoogleMaps(
         }, maxResults);
 
         // Visit detail pages for missing phone numbers
-        // Limit visits: fewer for large scrapes to avoid timeout
         const maxDetailVisits = maxResults > 60 ? 5 : 10;
         const needPhone = results.filter(r => !r.phone && r.placeUrl).slice(0, maxDetailVisits);
         for (const biz of needPhone) {
             try {
-                await page.goto(biz.placeUrl, { waitUntil: 'networkidle2', timeout: 15000 });
-                await delay(2000, 3500);
+                await page.goto(biz.placeUrl, { waitUntil: 'domcontentloaded', timeout: 10000 });
+                await delay(1500, 2500);
 
                 const detail = await page.evaluate(() => {
-                    // Look for phone button or tel: link
                     const phoneEl = document.querySelector('a[href^="tel:"]');
                     const phone = phoneEl?.getAttribute('href')?.replace('tel:', '') ||
                         phoneEl?.textContent?.trim() || '';
 
-                    // Look for website link
                     const websiteEl = document.querySelector('a[data-item-id="authority"]') as HTMLAnchorElement;
                     const website = websiteEl?.href || '';
 
-                    // Fallback: look in all buttons with phone icon
                     let fallbackPhone = '';
                     if (!phone) {
                         const buttons = document.querySelectorAll('button[data-item-id*="phone"]');
