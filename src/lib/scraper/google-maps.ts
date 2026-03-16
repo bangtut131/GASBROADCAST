@@ -1,16 +1,10 @@
 import chromium from '@sparticuz/chromium';
 import puppeteerCore from 'puppeteer-core';
-import { addExtra } from 'puppeteer-extra';
-import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 
-// Lazy initialize to avoid running during Next.js build phase (collecting page data)
-let puppeteerInstance: any = null;
+// Default to vanilla puppeteer-core to avoid puppeteer-extra proxy bugs (n.typeOf is not a function)
+// We use manual evaluateOnNewDocument stealth instead.
 function getPuppeteer() {
-    if (!puppeteerInstance) {
-        puppeteerInstance = addExtra(puppeteerCore as any);
-        puppeteerInstance.use(StealthPlugin());
-    }
-    return puppeteerInstance;
+    return puppeteerCore;
 }
 
 export interface ScrapedBusiness {
