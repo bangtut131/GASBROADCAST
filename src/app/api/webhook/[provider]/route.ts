@@ -67,21 +67,31 @@ export async function POST(
 
             if (!device) return NextResponse.json({ received: true, error: 'Device not found' });
 
-            // Upsert contact
-            const { data: contact } = await supabase
+            // Get or create contact safely without wiping existing name
+            let contactId = null;
+            const { data: existingContact } = await supabase
                 .from('contacts')
-                .upsert(
-                    { tenant_id: device.tenant_id, phone, name: null },
-                    { onConflict: 'tenant_id,phone', ignoreDuplicates: false }
-                )
                 .select('id')
-                .single();
+                .eq('tenant_id', device.tenant_id)
+                .eq('phone', phone)
+                .maybeSingle();
+
+            if (existingContact) {
+                contactId = existingContact.id;
+            } else {
+                const { data: newContact } = await supabase
+                    .from('contacts')
+                    .insert({ tenant_id: device.tenant_id, phone })
+                    .select('id')
+                    .maybeSingle();
+                if (newContact) contactId = newContact.id;
+            }
 
             // Save inbound message
             await supabase.from('messages').insert({
                 tenant_id: device.tenant_id,
                 device_id: device.id,
-                contact_id: contact?.id || null,
+                contact_id: contactId,
                 phone,
                 direction: 'inbound',
                 message_type: messageType,
@@ -244,7 +254,7 @@ export async function POST(
                 await supabase.from('messages').insert({
                     tenant_id: device.tenant_id,
                     device_id: device.id,
-                    contact_id: contact?.id || null,
+                    contact_id: contactId,
                     phone,
                     direction: 'outbound',
                     message_type: 'text',

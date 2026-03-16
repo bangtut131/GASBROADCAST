@@ -140,16 +140,31 @@ export async function POST(request: NextRequest) {
             }
             const phone = rawPhone.replace(/\D/g, '') || rawPhone;
 
-            // Upsert contact
-            await supabase.from('contacts').upsert({
-                tenant_id: device.tenant_id,
-                phone,
-            }, { onConflict: 'tenant_id, phone' });
+            // Get or create contact safely without wiping existing name
+            let contactId = null;
+            const { data: existingContact } = await supabase
+                .from('contacts')
+                .select('id')
+                .eq('tenant_id', device.tenant_id)
+                .eq('phone', phone)
+                .maybeSingle();
+
+            if (existingContact) {
+                contactId = existingContact.id;
+            } else {
+                const { data: newContact } = await supabase
+                    .from('contacts')
+                    .insert({ tenant_id: device.tenant_id, phone })
+                    .select('id')
+                    .maybeSingle();
+                if (newContact) contactId = newContact.id;
+            }
 
             // Save message
             const { error: msgError } = await supabase.from('messages').insert({
                 tenant_id: device.tenant_id,
                 device_id: device.id,
+                contact_id: contactId,
                 phone,
                 direction: 'inbound',
                 content: messageBody,
