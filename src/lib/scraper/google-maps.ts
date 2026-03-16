@@ -1,5 +1,11 @@
 import chromium from '@sparticuz/chromium';
-import puppeteer from 'puppeteer-core';
+import puppeteerCore from 'puppeteer-core';
+import { addExtra } from 'puppeteer-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+
+// Initialize puppeteer stealth wrapper
+const puppeteer = addExtra(puppeteerCore as any);
+puppeteer.use(StealthPlugin());
 
 export interface ScrapedBusiness {
     name: string;
@@ -19,7 +25,7 @@ function delay(min: number, max: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Random user agents
+// Random user agents (Stealth plugin also handles this, but we can keep it as fallback)
 const USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
@@ -36,6 +42,7 @@ export async function scrapeGoogleMaps(
     try {
         const userAgent = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 
+        // Launch with stealth
         browser = await puppeteer.launch({
             args: [
                 ...chromium.args,
@@ -44,10 +51,11 @@ export async function scrapeGoogleMaps(
                 '--disable-dev-shm-usage',
                 '--disable-gpu',
                 '--single-process',
+                '--disable-blink-features=AutomationControlled' // Extra anti-bot args
             ],
             defaultViewport: { width: 1366, height: 768 },
             executablePath: await chromium.executablePath(),
-            headless: true,
+            headless: true, 
         });
 
         const page = await browser.newPage();
