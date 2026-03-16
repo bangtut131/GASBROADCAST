@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import {
     MapPin, Search, Loader2, Phone, Star, Download,
     Users, ArrowLeft, Globe, CheckCircle, AlertCircle, 
-    Building2, Clock, History, PlayCircle
+    Building2, Clock, History, PlayCircle, Trash2
 } from 'lucide-react';
 
 interface Business {
@@ -183,6 +183,21 @@ export default function LeadsPage() {
         a.download = `leads_${new Date().getTime()}.csv`;
         a.click();
         URL.revokeObjectURL(url);
+    };
+
+    const handleDeleteJob = async (id: string) => {
+        if (!confirm('Hapus riwayat pencarian ini?')) return;
+        try {
+            const { error: delErr } = await supabase.from('scraper_jobs').delete().eq('id', id);
+            if (delErr) {
+                setError('Gagal menghapus riwayat: ' + delErr.message);
+                return;
+            }
+            setJobs(prev => prev.filter(j => j.id !== id));
+            // if we are currently viewing this job's results, maybe clear them?
+        } catch (err: any) {
+            setError('Gagal menghapus: ' + err.message);
+        }
     };
 
     return (
@@ -419,11 +434,21 @@ export default function LeadsPage() {
                                             {new Date(job.created_at).toLocaleString('id-ID')}
                                         </td>
                                         <td style={{ padding: 'var(--space-3)', textAlign: 'right' }}>
-                                            {job.status === 'completed' && job.count_found > 0 && (
-                                                <button className="btn btn-sm btn-primary" onClick={() => loadJobResults(job)}>
-                                                    Lihat Hasil
+                                            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
+                                                {job.status === 'completed' && job.count_found > 0 && (
+                                                    <button className="btn btn-sm btn-primary" onClick={() => loadJobResults(job)}>
+                                                        Lihat Hasil
+                                                    </button>
+                                                )}
+                                                <button 
+                                                    className="btn btn-sm btn-ghost" 
+                                                    onClick={() => handleDeleteJob(job.id)}
+                                                    style={{ color: 'var(--color-danger)', padding: '0 8px' }}
+                                                    title="Hapus riwayat ini"
+                                                >
+                                                    <Trash2 size={16} />
                                                 </button>
-                                            )}
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}

@@ -1,11 +1,4 @@
-import chromium from '@sparticuz/chromium';
-import puppeteerCore from 'puppeteer-core';
-
-// Default to vanilla puppeteer-core to avoid puppeteer-extra proxy bugs (n.typeOf is not a function)
-// We use manual evaluateOnNewDocument stealth instead.
-function getPuppeteer() {
-    return puppeteerCore;
-}
+import puppeteer from 'puppeteer';
 
 export interface ScrapedBusiness {
     name: string;
@@ -41,21 +34,15 @@ export async function scrapeGoogleMaps(
 
     try {
         const userAgent = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-        const puppeteer = getPuppeteer();
-
         // Launch with stealth
         browser = await puppeteer.launch({
             args: [
-                ...chromium.args,
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
-                '--disable-gpu',
-                '--single-process',
                 '--disable-blink-features=AutomationControlled' // Extra anti-bot args
             ],
             defaultViewport: { width: 1366, height: 768 },
-            executablePath: await chromium.executablePath(),
             headless: true, 
         });
 
@@ -132,12 +119,13 @@ export async function scrapeGoogleMaps(
         }
 
         // Extract data
-        const results: ScrapedBusiness[] = await page.evaluate((max: number) => {
-            const items: ScrapedBusiness[] = [];
+        const results: ScrapedBusiness[] = await page.evaluate(function (max: number) {
+            const items: any[] = [];
             const cards = document.querySelectorAll('div[role="feed"] > div > div');
 
-            for (const card of Array.from(cards)) {
+            for (let i = 0; i < cards.length; i++) {
                 if (items.length >= max) break;
+                const card = cards[i];
 
                 const link = card.querySelector('a[href*="/maps/place/"]') as HTMLAnchorElement;
                 if (!link) continue;
@@ -147,7 +135,7 @@ export async function scrapeGoogleMaps(
                 const reviewEl = card.querySelector('.UY7F9');
 
                 // Helper: detect if text is business hours
-                const isHoursText = (t: string) => {
+                const isHoursText = function(t: string) {
                     const lower = t.toLowerCase();
                     return /(buka|tutup|open|closed|24\s*jam|hours)/i.test(lower) ||
                         /\b\d{1,2}[.:.]\d{2}\b/.test(t) ||
@@ -162,32 +150,32 @@ export async function scrapeGoogleMaps(
                 let hours = '';
                 const textParts: string[] = [];
 
-                infoSpans.forEach(span => {
-                    // Get direct child spans to separate info pieces
+                for (let j = 0; j < infoSpans.length; j++) {
+                    const span = infoSpans[j];
                     const innerSpans = span.querySelectorAll(':scope > span');
                     if (innerSpans.length > 0) {
-                        innerSpans.forEach(s => {
-                            const t = s.textContent?.trim() || '';
+                        for (let k = 0; k < innerSpans.length; k++) {
+                            const s = innerSpans[k];
+                            const t = s.textContent ? s.textContent.trim() : '';
                             if (t && t !== '·' && t !== '⋅') textParts.push(t);
-                        });
+                        }
                     } else {
-                        const t = span.textContent?.trim() || '';
+                        const t = span.textContent ? span.textContent.trim() : '';
                         if (t) textParts.push(t);
                     }
-                });
+                }
 
                 // Parse text parts
-                for (const part of textParts) {
+                for (let j = 0; j < textParts.length; j++) {
+                    const part = textParts[j];
                     const clean = part.replace(/^[·⋅\s]+|[·⋅\s]+$/g, '').trim();
                     if (!clean) continue;
 
                     if (isHoursText(clean)) {
                         if (!hours) hours = clean;
                     } else if (!category && clean.length < 40 && !/\d{3,}/.test(clean)) {
-                        // Short text without many digits = likely category
                         category = clean;
                     } else if (clean.length > 10 && !isHoursText(clean)) {
-                        // Longer text that's not hours = likely address
                         if (!address || clean.length > address.length) address = clean;
                     }
                 }
@@ -196,17 +184,17 @@ export async function scrapeGoogleMaps(
                 const allText = card.textContent || '';
                 const phoneMatch = allText.match(/(\+?\d[\d\s\-()]{8,}\d)/);
 
-                const name = nameEl?.textContent?.trim() || '';
+                const name = nameEl && nameEl.textContent ? nameEl.textContent.trim() : '';
                 if (!name) continue;
 
                 items.push({
-                    name,
+                    name: name,
                     phone: phoneMatch ? phoneMatch[1].replace(/[\s\-()]/g, '') : '',
-                    address,
-                    hours,
+                    address: address,
+                    hours: hours,
                     category: category.replace(/·\s*/g, '').trim(),
-                    rating: ratingEl?.textContent?.trim() || '',
-                    reviewCount: reviewEl?.textContent?.trim()?.replace(/[()]/g, '') || '',
+                    rating: ratingEl && ratingEl.textContent ? ratingEl.textContent.trim() : '',
+                    reviewCount: reviewEl && reviewEl.textContent ? reviewEl.textContent.trim().replace(/[()]/g, '') : '',
                     website: '',
                     placeUrl: link.href || '',
                 });
@@ -216,33 +204,38 @@ export async function scrapeGoogleMaps(
 
         // Visit detail pages for missing phone numbers
         const maxDetailVisits = maxResults > 60 ? 5 : 10;
-        const needPhone = results.filter(r => !r.phone && r.placeUrl).slice(0, maxDetailVisits);
-        for (const biz of needPhone) {
+        const needPhone = results.filter(function(r) { return !r.phone && r.placeUrl; }).slice(0, maxDetailVisits);
+        for (let i = 0; i < needPhone.length; i++) {
+            const biz = needPhone[i];
             try {
                 await page.goto(biz.placeUrl, { waitUntil: 'domcontentloaded', timeout: 10000 });
                 await delay(1500, 2500);
 
-                const detail = await page.evaluate(() => {
+                const detail = await page.evaluate(function() {
                     const phoneEl = document.querySelector('a[href^="tel:"]');
-                    const phone = phoneEl?.getAttribute('href')?.replace('tel:', '') ||
-                        phoneEl?.textContent?.trim() || '';
+                    const phoneAttr = phoneEl ? phoneEl.getAttribute('href') : '';
+                    let phone = phoneAttr ? phoneAttr.replace('tel:', '') : '';
+                    if (!phone && phoneEl && phoneEl.textContent) {
+                        phone = phoneEl.textContent.trim();
+                    }
 
                     const websiteEl = document.querySelector('a[data-item-id="authority"]') as HTMLAnchorElement;
-                    const website = websiteEl?.href || '';
+                    const website = websiteEl && websiteEl.href ? websiteEl.href : '';
 
                     let fallbackPhone = '';
                     if (!phone) {
                         const buttons = document.querySelectorAll('button[data-item-id*="phone"]');
-                        buttons.forEach(btn => {
-                            const txt = btn.textContent?.trim() || '';
+                        for (let j = 0; j < buttons.length; j++) {
+                            const btn = buttons[j];
+                            const txt = btn.textContent ? btn.textContent.trim() : '';
                             const match = txt.match(/(\+?\d[\d\s\-()]{8,}\d)/);
                             if (match) fallbackPhone = match[1];
-                        });
+                        }
                     }
 
                     return {
                         phone: (phone || fallbackPhone).replace(/[\s\-()]/g, ''),
-                        website,
+                        website: website,
                     };
                 });
 
