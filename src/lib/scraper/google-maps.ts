@@ -1,5 +1,5 @@
+import chromium from '@sparticuz/chromium';
 import puppeteer from 'puppeteer-core';
-import { existsSync } from 'fs';
 
 export interface ScrapedBusiness {
     name: string;
@@ -27,43 +27,6 @@ const USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
 ];
 
-// Find available Chromium executable
-async function getChromiumPath(): Promise<{ executablePath: string; args: string[] }> {
-    // 1. Check environment variable override
-    if (process.env.CHROMIUM_PATH && existsSync(process.env.CHROMIUM_PATH)) {
-        return {
-            executablePath: process.env.CHROMIUM_PATH,
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--single-process'],
-        };
-    }
-
-    // 2. Try @sparticuz/chromium (works on Railway & serverless)
-    try {
-        const chromium = (await import('@sparticuz/chromium')).default;
-        const execPath = await chromium.executablePath();
-        if (execPath) {
-            return { executablePath: execPath, args: chromium.args };
-        }
-    } catch { /* not available */ }
-
-    // 3. Common Windows paths (local dev only)
-    const winPaths = [
-        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-        process.env.LOCALAPPDATA + '\\Google\\Chrome\\Application\\chrome.exe',
-    ];
-    for (const p of winPaths) {
-        if (p && existsSync(p)) {
-            return {
-                executablePath: p,
-                args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
-            };
-        }
-    }
-
-    throw new Error('Tidak dapat menemukan Chromium/Chrome. Set CHROMIUM_PATH di environment variable.');
-}
-
 export async function scrapeGoogleMaps(
     query: string,
     maxResults: number = 40
@@ -72,16 +35,20 @@ export async function scrapeGoogleMaps(
 
     try {
         const userAgent = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-        const { executablePath, args } = await getChromiumPath();
-        console.log(`[Scraper] Launching browser from: ${executablePath}`);
 
         browser = await puppeteer.launch({
-            args,
+            args: [
+                ...chromium.args,
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--single-process',
+            ],
             defaultViewport: { width: 1366, height: 768 },
-            executablePath,
+            executablePath: await chromium.executablePath(),
             headless: true,
         });
-        console.log('[Scraper] Browser launched OK');
 
         const page = await browser.newPage();
 
@@ -115,9 +82,7 @@ export async function scrapeGoogleMaps(
 
         // Navigate to Google Maps search
         const searchUrl = `https://www.google.com/maps/search/${encodeURIComponent(query)}`;
-        console.log(`[Scraper] Navigating to: ${searchUrl}`);
         await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
-        console.log('[Scraper] Page loaded');
 
         // Wait for content
         await delay(3000, 5000);
