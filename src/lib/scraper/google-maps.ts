@@ -3,9 +3,15 @@ import puppeteerCore from 'puppeteer-core';
 import { addExtra } from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 
-// Initialize puppeteer stealth wrapper
-const puppeteer = addExtra(puppeteerCore as any);
-puppeteer.use(StealthPlugin());
+// Lazy initialize to avoid running during Next.js build phase (collecting page data)
+let puppeteerInstance: any = null;
+function getPuppeteer() {
+    if (!puppeteerInstance) {
+        puppeteerInstance = addExtra(puppeteerCore as any);
+        puppeteerInstance.use(StealthPlugin());
+    }
+    return puppeteerInstance;
+}
 
 export interface ScrapedBusiness {
     name: string;
@@ -41,6 +47,7 @@ export async function scrapeGoogleMaps(
 
     try {
         const userAgent = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+        const puppeteer = getPuppeteer();
 
         // Launch with stealth
         browser = await puppeteer.launch({
