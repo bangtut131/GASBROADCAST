@@ -229,6 +229,17 @@ export default function LandingPage() {
           display: flex;
           gap: var(--space-2);
         }
+        /* Force light text on always-dark nav bar for both themes */
+        .landing-nav .landing-logo-text {
+          color: #fff;
+        }
+        .landing-nav .btn-ghost {
+          color: rgba(255, 255, 255, 0.85);
+        }
+        .landing-nav .btn-ghost:hover {
+          color: #fff;
+          background: rgba(255, 255, 255, 0.1);
+        }
 
         /* Hero */
         .hero {
