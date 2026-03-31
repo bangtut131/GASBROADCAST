@@ -13,10 +13,24 @@ import { createServiceClient } from '@/lib/supabase/server';
  */
 export async function POST(request: NextRequest) {
     try {
-        // Auth check
+        // Auth: allow CRON_SECRET or authenticated admin/owner
         const cronSecret = request.headers.get('x-cron-secret');
-        if (cronSecret !== process.env.CRON_SECRET) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const hasCronAuth = cronSecret && process.env.CRON_SECRET && cronSecret === process.env.CRON_SECRET;
+
+        if (!hasCronAuth) {
+            const { createClient } = await import('@/lib/supabase/server');
+            const userSupabase = await createClient();
+            const { data: { user } } = await userSupabase.auth.getUser();
+            if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+            const { data: profile } = await userSupabase
+                .from('profiles')
+                .select('role')
+                .eq('id', user.id)
+                .single();
+            if (!profile || !['owner', 'admin'].includes(profile.role)) {
+                return NextResponse.json({ error: 'Admin only' }, { status: 403 });
+            }
         }
 
         const supabase = await createServiceClient();

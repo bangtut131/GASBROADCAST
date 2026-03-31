@@ -74,6 +74,19 @@ export default function InboxPage() {
 
     useEffect(() => { loadConversations(); }, [loadConversations]);
 
+    // Auto-setup bucket + cleanup old media (runs once per browser session)
+    useEffect(() => {
+        const key = 'inbox-media-cleanup-done';
+        if (sessionStorage.getItem(key)) return;
+        sessionStorage.setItem(key, '1');
+
+        // Setup bucket (GET) — silent, fire-and-forget
+        fetch('/api/cron/cleanup-media?action=setup').catch(() => {});
+
+        // Cleanup old files (POST) — silent, fire-and-forget
+        fetch('/api/cron/cleanup-media', { method: 'POST' }).catch(() => {});
+    }, []);
+
     useEffect(() => {
         if (selectedPhone) loadMessages(selectedPhone);
     }, [selectedPhone, loadMessages]);
