@@ -121,6 +121,19 @@ export async function POST(request: NextRequest) {
                 return NextResponse.json({ success: true });
             }
 
+            // Dedup: skip if this message ID was already processed
+            if (payload.id) {
+                const { data: existing } = await supabase
+                    .from('messages')
+                    .select('id')
+                    .eq('wa_message_id', payload.id)
+                    .maybeSingle();
+                if (existing) {
+                    console.log(`[Webhook wa-web] ⏭️ Skipping duplicate message ${payload.id}`);
+                    return NextResponse.json({ success: true, duplicate: true });
+                }
+            }
+
             // Use body or fallback to [Media] so messages are always saved
             const messageBody = payload.body || '[Media]';
 
@@ -212,6 +225,7 @@ export async function POST(request: NextRequest) {
                 content: messageBody,
                 media_url: resolvedMediaUrl,
                 message_type: payload.type || 'text',
+                wa_message_id: payload.id || null,
             });
 
             if (msgError) {

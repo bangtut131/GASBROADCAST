@@ -246,6 +246,10 @@ export async function createSession(sessionId) {
         }
     });
 
+    // Deduplication: track recently processed message IDs to prevent duplicate webhook calls
+    const processedMsgIds = new Set();
+    const DEDUP_MAX = 500;
+
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         // Store ALL messages for getMessage retry support (needed for Signal Protocol renegotiation)
         for (const msg of messages) {
@@ -262,6 +266,20 @@ export async function createSession(sessionId) {
             if (msg.key.fromMe) continue;
             const from = msg.key.remoteJid;
             if (!from || from.endsWith('@g.us')) continue;
+
+            // Dedup: skip if already processed
+            const msgId = msg.key.id;
+            if (processedMsgIds.has(msgId)) {
+                console.log(`[${sessionId}] ⏭️ Skipping duplicate message ${msgId}`);
+                continue;
+            }
+            processedMsgIds.add(msgId);
+            // Keep set from growing unbounded
+            if (processedMsgIds.size > DEDUP_MAX) {
+                const first = processedMsgIds.values().next().value;
+                processedMsgIds.delete(first);
+            }
+
             // Allow @lid (Linked Device IDs) because Multi-Device uses this for subsequent messages
 
             // Extract body — handle all known message types including nested wrappers
