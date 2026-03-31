@@ -175,6 +175,8 @@ export class OfficialProvider implements WAProvider {
                     body: msg.text?.body || msg.caption || '',
                     messageType: msg.type,
                     timestamp: msg.timestamp,
+                    mediaId: msg[msg.type]?.id || null,
+                    mediaMime: msg[msg.type]?.mime_type || null,
                 },
             };
         }

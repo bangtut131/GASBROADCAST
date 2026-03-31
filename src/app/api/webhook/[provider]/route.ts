@@ -47,8 +47,9 @@ export async function POST(
 
         // Handle incoming messages
         if (parsedEvent.type === 'message') {
-            const { from: rawFrom, author, body: messageBody, messageId, messageType: rawMessageType } = parsedEvent.data as {
+            const { from: rawFrom, author, body: messageBody, messageId, messageType: rawMessageType, mediaUrl, mediaId } = parsedEvent.data as {
                 from: string; author?: string; body: string; messageId: string; messageType?: string; timestamp?: number;
+                mediaUrl?: string; mediaId?: string;
             };
 
             if (!rawFrom) return NextResponse.json({ received: true });
@@ -57,6 +58,26 @@ export async function POST(
             const actualFrom = isStatus ? (author || rawFrom) : rawFrom;
             const messageType = isStatus ? 'status' : (rawMessageType || 'text');
             const phone = formatPhone(actualFrom);
+
+            // Resolve media URL
+            let resolvedMediaUrl: string | null = mediaUrl || null;
+            
+            // For Official (Meta) provider: resolve mediaId to download URL via Graph API
+            if (!resolvedMediaUrl && mediaId && provider === 'official') {
+                try {
+                    const metaToken = process.env.META_WA_ACCESS_TOKEN || '';
+                    const metaApiUrl = process.env.META_WA_API_URL || 'https://graph.facebook.com/v21.0';
+                    const mediaRes = await fetch(`${metaApiUrl}/${mediaId}`, {
+                        headers: { 'Authorization': `Bearer ${metaToken}` },
+                    });
+                    if (mediaRes.ok) {
+                        const mediaData = await mediaRes.json();
+                        resolvedMediaUrl = mediaData.url || null;
+                    }
+                } catch (mediaErr: any) {
+                    console.error('[Webhook] Failed to resolve Meta media URL:', mediaErr.message);
+                }
+            }
 
             // Find the device
             const { data: device } = await supabase
@@ -96,6 +117,7 @@ export async function POST(
                 direction: 'inbound',
                 message_type: messageType,
                 content: messageBody,
+                media_url: resolvedMediaUrl,
                 wa_message_id: messageId,
             });
 

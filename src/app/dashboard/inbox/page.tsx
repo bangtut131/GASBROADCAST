@@ -4,7 +4,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import {
     Search, MessageSquare, Send, Smartphone, Bot, User,
-    Circle, RefreshCw, Loader2, UserCheck, Trash2, Mail, MailOpen
+    Circle, RefreshCw, Loader2, UserCheck, Trash2, Mail, MailOpen,
+    Paperclip, X, Image as ImageIcon, FileText, Film, Music, Download, ZoomIn
 } from 'lucide-react';
 
 interface Conversation {
@@ -26,6 +27,13 @@ interface Message {
     message_type: string;
     is_from_bot: boolean;
     created_at: string;
+    media_url: string | null;
+}
+
+interface AttachmentPreview {
+    file: File;
+    previewUrl: string;
+    mediaType: 'image' | 'video' | 'document' | 'audio';
 }
 
 export default function InboxPage() {
@@ -41,7 +49,11 @@ export default function InboxPage() {
     const [sending, setSending] = useState(false);
     const [loading, setLoading] = useState(true);
     const [realtimeStatus, setRealtimeStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
+    const [attachment, setAttachment] = useState<AttachmentPreview | null>(null);
+    const [uploading, setUploading] = useState(false);
+    const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const supabase = createClient();
 
     const loadConversations = useCallback(async () => {
@@ -113,37 +125,106 @@ export default function InboxPage() {
     }, [selectedPhone, loadMessages]);
 
 
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        // Validate size (5MB)
+        if (file.size > 5 * 1024 * 1024) {
+            alert('File terlalu besar. Maksimal 5MB.');
+            return;
+        }
+
+        let mediaType: AttachmentPreview['mediaType'] = 'document';
+        if (file.type.startsWith('image/')) mediaType = 'image';
+        else if (file.type.startsWith('video/')) mediaType = 'video';
+        else if (file.type.startsWith('audio/')) mediaType = 'audio';
+
+        const previewUrl = mediaType === 'image' ? URL.createObjectURL(file) : '';
+        setAttachment({ file, previewUrl, mediaType });
+
+        // Reset input
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+
+    const clearAttachment = () => {
+        if (attachment?.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
+        setAttachment(null);
+    };
+
     const handleSend = async () => {
-        if (!newMessage.trim() || !selectedPhone || sending) return;
+        if ((!newMessage.trim() && !attachment) || !selectedPhone || sending) return;
         setSending(true);
+
         const optimisticId = `opt-${Date.now()}`;
         const optimistic: Message = {
             id: optimisticId,
-            content: newMessage,
+            content: newMessage || null,
             direction: 'outbound',
-            message_type: 'text',
+            message_type: attachment?.mediaType || 'text',
             is_from_bot: false,
             created_at: new Date().toISOString(),
+            media_url: attachment?.previewUrl || null,
         };
         setMessages(prev => [...prev, optimistic]);
         const msg = newMessage;
         setNewMessage('');
+        const currentAttachment = attachment;
+        setAttachment(null);
 
         try {
+            let mediaUrl: string | null = null;
+            let mediaType: string | null = null;
+            let filename: string | null = null;
+
+            // Upload attachment if present
+            if (currentAttachment) {
+                setUploading(true);
+                const formData = new FormData();
+                formData.append('file', currentAttachment.file);
+
+                const uploadRes = await fetch('/api/inbox/upload', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!uploadRes.ok) {
+                    const err = await uploadRes.json();
+                    throw new Error(err.error || 'Upload gagal');
+                }
+
+                const uploadData = await uploadRes.json();
+                mediaUrl = uploadData.data.url;
+                mediaType = uploadData.data.mediaType;
+                filename = currentAttachment.file.name;
+                setUploading(false);
+            }
+
             const res = await fetch('/api/inbox/send', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ phone: selectedPhone, message: msg }),
+                body: JSON.stringify({
+                    phone: selectedPhone,
+                    message: msg || null,
+                    media_url: mediaUrl,
+                    media_type: mediaType,
+                    filename,
+                }),
             });
             if (!res.ok) {
-                // Remove optimistic if failed
                 setMessages(prev => prev.filter(m => m.id !== optimisticId));
                 setNewMessage(msg);
             }
-        } catch {
+        } catch (err: any) {
+            console.error('Send error:', err);
             setMessages(prev => prev.filter(m => m.id !== optimisticId));
             setNewMessage(msg);
-        } finally { setSending(false); }
+            alert(err.message || 'Gagal mengirim pesan');
+        } finally {
+            setSending(false);
+            setUploading(false);
+            if (currentAttachment?.previewUrl) URL.revokeObjectURL(currentAttachment.previewUrl);
+        }
     };
 
     const handleDeleteConversation = async (phone: string) => {
@@ -307,8 +388,8 @@ export default function InboxPage() {
                                             )}
                                         </div>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                <p style={{ fontSize: 'var(--text-xs)', color: (conv.unread || 0) > 0 ? 'var(--color-text-primary)' : 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: (conv.unread || 0) > 0 ? 500 : 400, flex: 1, paddingRight: 8 }}>
-                                                    {conv.lastMessage}
+                                                <p style={{ fontSize: 'var(--text-xs)', color: (conv.unread || 0) > 0 ? 'var(--color-text-primary)' : 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: (conv.unread || 0) > 0 ? 500 : 400, flex: 1, paddingRight: 8, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                    {conv.lastMessage === '[Media]' ? <><ImageIcon size={12} /> Media</> : conv.lastMessage}
                                                 </p>
                                                 {(conv.unread || 0) > 0 && (
                                                     <span style={{ background: 'var(--color-accent)', color: 'white', borderRadius: '10px', padding: '2px 6px', fontSize: 10, fontWeight: 700, minWidth: 20, textAlign: 'center' }}>
@@ -390,7 +471,7 @@ export default function InboxPage() {
                                                 </div>
                                             )}
                                             <div style={{
-                                                padding: 'var(--space-2) var(--space-3)',
+                                                padding: (msg.media_url && (msg.message_type === 'image' || msg.message_type === 'video')) ? '4px 4px 4px 4px' : 'var(--space-2) var(--space-3)',
                                                 borderRadius: msg.direction === 'outbound' ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
                                                 background: msg.direction === 'outbound'
                                                     ? (msg.is_from_bot ? 'rgba(108,99,255,0.85)' : 'var(--color-accent)')
@@ -399,8 +480,80 @@ export default function InboxPage() {
                                                 fontSize: 'var(--text-sm)', lineHeight: 1.5,
                                                 whiteSpace: 'pre-wrap', wordBreak: 'break-word',
                                                 opacity: msg.id.startsWith('opt-') ? 0.7 : 1,
+                                                overflow: 'hidden',
                                             }}>
-                                                {msg.content}
+                                                {/* Media content */}
+                                                {msg.media_url && msg.message_type === 'image' && (
+                                                    <div style={{ position: 'relative', cursor: 'pointer', marginBottom: msg.content ? 6 : 0 }}
+                                                         onClick={() => setLightboxUrl(msg.media_url)}>
+                                                        <img
+                                                            src={msg.media_url}
+                                                            alt="Media"
+                                                            style={{
+                                                                maxWidth: '100%',
+                                                                maxHeight: 280,
+                                                                borderRadius: 8,
+                                                                display: 'block',
+                                                                objectFit: 'cover',
+                                                            }}
+                                                            loading="lazy"
+                                                        />
+                                                        <div style={{
+                                                            position: 'absolute', top: 6, right: 6,
+                                                            background: 'rgba(0,0,0,0.5)', borderRadius: '50%',
+                                                            width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                        }}>
+                                                            <ZoomIn size={14} color="white" />
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {msg.media_url && msg.message_type === 'video' && (
+                                                    <video
+                                                        src={msg.media_url}
+                                                        controls
+                                                        style={{ maxWidth: '100%', maxHeight: 280, borderRadius: 8, display: 'block', marginBottom: msg.content ? 6 : 0 }}
+                                                    />
+                                                )}
+                                                {msg.media_url && msg.message_type === 'audio' && (
+                                                    <audio src={msg.media_url} controls style={{ maxWidth: '100%', marginBottom: msg.content ? 6 : 0 }} />
+                                                )}
+                                                {msg.media_url && msg.message_type === 'document' && (
+                                                    <a href={msg.media_url} target="_blank" rel="noopener noreferrer"
+                                                       style={{
+                                                           display: 'flex', alignItems: 'center', gap: 8,
+                                                           padding: '8px 12px', borderRadius: 8,
+                                                           background: msg.direction === 'outbound' ? 'rgba(255,255,255,0.15)' : 'var(--color-bg-secondary)',
+                                                           marginBottom: msg.content ? 6 : 0,
+                                                           textDecoration: 'none', color: 'inherit',
+                                                       }}>
+                                                        <FileText size={20} style={{ flexShrink: 0 }} />
+                                                        <span style={{ fontSize: 'var(--text-xs)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Dokumen</span>
+                                                        <Download size={16} style={{ flexShrink: 0 }} />
+                                                    </a>
+                                                )}
+                                                {/* Placeholder for media without URL */}
+                                                {!msg.media_url && msg.message_type !== 'text' && (
+                                                    <div style={{
+                                                        display: 'flex', alignItems: 'center', gap: 6,
+                                                        padding: '8px 12px', borderRadius: 8,
+                                                        background: msg.direction === 'outbound' ? 'rgba(255,255,255,0.15)' : 'var(--color-bg-secondary)',
+                                                        marginBottom: msg.content ? 6 : 0,
+                                                        color: msg.direction === 'outbound' ? 'rgba(255,255,255,0.7)' : 'var(--color-text-muted)',
+                                                        fontSize: 'var(--text-xs)',
+                                                    }}>
+                                                        {msg.message_type === 'image' && <><ImageIcon size={16} /> Gambar</>}
+                                                        {msg.message_type === 'video' && <><Film size={16} /> Video</>}
+                                                        {msg.message_type === 'audio' && <><Music size={16} /> Audio</>}
+                                                        {msg.message_type === 'document' && <><FileText size={16} /> Dokumen</>}
+                                                        {!['image', 'video', 'audio', 'document'].includes(msg.message_type) && msg.message_type}
+                                                    </div>
+                                                )}
+                                                {/* Text content / caption */}
+                                                {msg.content && (
+                                                    <div style={{ padding: (msg.media_url && (msg.message_type === 'image' || msg.message_type === 'video')) ? '0 8px 4px' : 0 }}>
+                                                        {msg.content}
+                                                    </div>
+                                                )}
                                             </div>
                                             <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 2, textAlign: msg.direction === 'outbound' ? 'right' : 'left' }}>
                                                 {formatTime(msg.created_at)}{msg.id.startsWith('opt-') ? ' · mengirim...' : ''}
@@ -422,25 +575,122 @@ export default function InboxPage() {
                     </div>
 
                     {/* Input */}
-                        <div style={{ padding: 'var(--space-3) var(--space-4)', borderTop: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', display: 'flex', gap: 'var(--space-2)', alignItems: 'flex-end' }}>
-                            <textarea
-                                className="form-textarea"
-                                style={{ flex: 1, minHeight: 40, maxHeight: 120, resize: 'none', borderRadius: 20, padding: '8px var(--space-4)' }}
-                                placeholder="Ketik pesan... (Enter untuk kirim)"
-                                value={newMessage}
-                                onChange={e => setNewMessage(e.target.value)}
-                                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                                rows={1}
-                            />
-                            <button className="btn btn-primary btn-icon" onClick={handleSend} disabled={sending || !newMessage.trim()} style={{ width: 42, height: 42, borderRadius: '50%', flexShrink: 0 }}>
-                                <Send size={18} />
-                            </button>
+                        <div style={{ borderTop: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+                            {/* Attachment preview */}
+                            {attachment && (
+                                <div style={{ padding: 'var(--space-3) var(--space-4) 0', display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+                                    <div style={{
+                                        display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
+                                        background: 'var(--color-bg-elevated)', borderRadius: 12,
+                                        padding: 'var(--space-2) var(--space-3)', flex: 1,
+                                        border: '1px solid var(--color-border)',
+                                    }}>
+                                        {attachment.mediaType === 'image' && attachment.previewUrl ? (
+                                            <img src={attachment.previewUrl} alt="Preview" style={{ width: 48, height: 48, borderRadius: 8, objectFit: 'cover' }} />
+                                        ) : attachment.mediaType === 'video' ? (
+                                            <div style={{ width: 48, height: 48, borderRadius: 8, background: 'var(--color-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                <Film size={20} style={{ color: 'var(--color-accent)' }} />
+                                            </div>
+                                        ) : attachment.mediaType === 'audio' ? (
+                                            <div style={{ width: 48, height: 48, borderRadius: 8, background: 'var(--color-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                <Music size={20} style={{ color: 'var(--color-accent)' }} />
+                                            </div>
+                                        ) : (
+                                            <div style={{ width: 48, height: 48, borderRadius: 8, background: 'var(--color-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                <FileText size={20} style={{ color: 'var(--color-accent)' }} />
+                                            </div>
+                                        )}
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ fontSize: 'var(--text-sm)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                {attachment.file.name}
+                                            </div>
+                                            <div style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>
+                                                {(attachment.file.size / 1024).toFixed(0)} KB · {attachment.mediaType}
+                                            </div>
+                                        </div>
+                                        <button className="btn btn-ghost btn-sm btn-icon" onClick={clearAttachment} title="Hapus attachment">
+                                            <X size={16} />
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                            <div style={{ padding: 'var(--space-3) var(--space-4)', display: 'flex', gap: 'var(--space-2)', alignItems: 'flex-end' }}>
+                                <input
+                                    type="file"
+                                    ref={fileInputRef}
+                                    onChange={handleFileSelect}
+                                    style={{ display: 'none' }}
+                                    accept="image/*,video/mp4,video/3gpp,audio/*,application/pdf,.doc,.docx,.xls,.xlsx"
+                                />
+                                <button
+                                    className="btn btn-ghost btn-icon"
+                                    onClick={() => fileInputRef.current?.click()}
+                                    title="Lampirkan file"
+                                    style={{ width: 42, height: 42, borderRadius: '50%', flexShrink: 0 }}
+                                    disabled={sending}
+                                >
+                                    <Paperclip size={18} />
+                                </button>
+                                <textarea
+                                    className="form-textarea"
+                                    style={{ flex: 1, minHeight: 40, maxHeight: 120, resize: 'none', borderRadius: 20, padding: '8px var(--space-4)' }}
+                                    placeholder={attachment ? 'Tambahkan caption... (opsional)' : 'Ketik pesan... (Enter untuk kirim)'}
+                                    value={newMessage}
+                                    onChange={e => setNewMessage(e.target.value)}
+                                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                                    rows={1}
+                                />
+                                <button
+                                    className="btn btn-primary btn-icon"
+                                    onClick={handleSend}
+                                    disabled={sending || uploading || (!newMessage.trim() && !attachment)}
+                                    style={{ width: 42, height: 42, borderRadius: '50%', flexShrink: 0 }}
+                                >
+                                    {uploading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+                                </button>
+                            </div>
                         </div>
                 </div>
             ) : (
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 'var(--space-4)', color: 'var(--color-text-muted)' }}>
                     <MessageSquare size={48} style={{ opacity: 0.3 }} />
                     <p style={{ fontSize: 'var(--text-md)' }}>Pilih percakapan untuk mulai chat</p>
+                </div>
+            )}
+
+            {/* Lightbox */}
+            {lightboxUrl && (
+                <div
+                    onClick={() => setLightboxUrl(null)}
+                    style={{
+                        position: 'fixed', inset: 0, zIndex: 9999,
+                        background: 'rgba(0,0,0,0.85)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        cursor: 'zoom-out',
+                    }}
+                >
+                    <button
+                        onClick={() => setLightboxUrl(null)}
+                        style={{
+                            position: 'absolute', top: 16, right: 16,
+                            background: 'rgba(255,255,255,0.15)', border: 'none',
+                            borderRadius: '50%', width: 40, height: 40,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            cursor: 'pointer', color: 'white',
+                        }}
+                    >
+                        <X size={20} />
+                    </button>
+                    <img
+                        src={lightboxUrl}
+                        alt="Full size"
+                        onClick={e => e.stopPropagation()}
+                        style={{
+                            maxWidth: '90vw', maxHeight: '90vh',
+                            borderRadius: 12, objectFit: 'contain',
+                            cursor: 'default',
+                        }}
+                    />
                 </div>
             )}
         </div>

@@ -217,6 +217,8 @@ export class WAHAProvider implements WAProvider {
                     body: payload.payload?.body,
                     messageType: payload.payload?.type,
                     timestamp: payload.payload?.timestamp,
+                    hasMedia: payload.payload?.hasMedia || false,
+                    mediaUrl: payload.payload?.media?.url || null,
                 },
             };
         }

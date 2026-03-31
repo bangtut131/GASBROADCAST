@@ -168,6 +168,7 @@ export async function POST(request: NextRequest) {
                 phone,
                 direction: 'inbound',
                 content: messageBody,
+                media_url: payload.mediaUrl || payload.media_url || null,
                 message_type: payload.type || 'text',
             });
 
