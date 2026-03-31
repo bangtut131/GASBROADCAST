@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/server';
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ALLOWED_TYPES = [
@@ -16,8 +17,9 @@ const ALLOWED_TYPES = [
 // POST /api/inbox/upload — Upload file to Supabase Storage
 export async function POST(request: NextRequest) {
     try {
-        const supabase = await createClient();
-        const { data: { user } } = await supabase.auth.getUser();
+        // Auth check with user client
+        const userSupabase = await createClient();
+        const { data: { user } } = await userSupabase.auth.getUser();
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const formData = await request.formData();
@@ -45,7 +47,8 @@ export async function POST(request: NextRequest) {
         const filename = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${ext}`;
         const filePath = `inbox/${user.id}/${filename}`;
 
-        // Upload to Supabase Storage
+        // Upload to Supabase Storage (use service client to bypass RLS)
+        const supabase = await createServiceClient();
         const buffer = Buffer.from(await file.arrayBuffer());
         const { data: uploadData, error: uploadError } = await supabase.storage
             .from('inbox-media')

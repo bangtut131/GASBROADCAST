@@ -7,7 +7,8 @@ import makeWASocket, {
     DisconnectReason,
     useMultiFileAuthState,
     fetchLatestBaileysVersion,
-    generateWAMessageFromContent
+    generateWAMessageFromContent,
+    downloadMediaMessage
 } from '@whiskeysockets/baileys';
 import { existsSync, mkdirSync, rmSync, readdirSync, statSync, readFileSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
@@ -308,14 +309,38 @@ export async function createSession(sessionId) {
 
             console.log(`[${sessionId}] 📨 Message from ${phone} (raw: ${from}): "${body.substring(0, 60)}" type=${type}`);
 
+            // Download media if present
+            let mediaUrl = null;
+            const msgType = getMessageType(msg);
+            if (msgType !== 'text' && msg.message) {
+                try {
+                    const buffer = await downloadMediaMessage(msg, 'buffer', {});
+                    if (buffer && buffer.length > 0) {
+                        // Get MIME type
+                        const mimeMap = {
+                            image: msg.message?.imageMessage?.mimetype || 'image/jpeg',
+                            video: msg.message?.videoMessage?.mimetype || 'video/mp4',
+                            audio: msg.message?.audioMessage?.mimetype || 'audio/ogg',
+                            document: msg.message?.documentMessage?.mimetype || 'application/octet-stream',
+                        };
+                        const mime = mimeMap[msgType] || 'application/octet-stream';
+                        mediaUrl = `data:${mime};base64,${buffer.toString('base64')}`;
+                        console.log(`[${sessionId}] 📎 Downloaded media: ${msgType} (${(buffer.length / 1024).toFixed(1)}KB)`);
+                    }
+                } catch (mediaErr) {
+                    console.error(`[${sessionId}] ⚠️ Media download failed:`, mediaErr.message);
+                }
+            }
+
             await sendWebhook(sessionId, 'message.received', {
                 sessionId,
                 payload: {
                     id: msg.key.id,
                     from: phone,
                     body,
-                    type: getMessageType(msg),
+                    type: msgType,
                     timestamp: msg.messageTimestamp,
+                    mediaUrl,
                 },
             });
         }

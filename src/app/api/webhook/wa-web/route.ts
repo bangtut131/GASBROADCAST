@@ -160,6 +160,48 @@ export async function POST(request: NextRequest) {
                 if (newContact) contactId = newContact.id;
             }
 
+            // Handle media: upload base64 data URL to Supabase Storage
+            let resolvedMediaUrl = payload.mediaUrl || payload.media_url || null;
+            if (resolvedMediaUrl && resolvedMediaUrl.startsWith('data:')) {
+                try {
+                    const matches = resolvedMediaUrl.match(/^data:([^;]+);base64,(.+)$/);
+                    if (matches) {
+                        const mimeType = matches[1];
+                        const base64Data = matches[2];
+                        const buffer = Buffer.from(base64Data, 'base64');
+                        
+                        // Determine extension from mime
+                        const extMap: Record<string, string> = {
+                            'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp',
+                            'video/mp4': 'mp4', 'video/3gpp': '3gp',
+                            'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/wav': 'wav',
+                            'application/pdf': 'pdf',
+                        };
+                        const ext = extMap[mimeType] || 'bin';
+                        const filename = `${Date.now()}-${Math.random().toString(36).substring(2, 6)}.${ext}`;
+                        const filePath = `inbox/inbound/${phone}/${filename}`;
+
+                        const { error: uploadErr } = await supabase.storage
+                            .from('inbox-media')
+                            .upload(filePath, buffer, { contentType: mimeType, upsert: false });
+
+                        if (!uploadErr) {
+                            const { data: urlData } = supabase.storage
+                                .from('inbox-media')
+                                .getPublicUrl(filePath);
+                            resolvedMediaUrl = urlData.publicUrl;
+                            console.log(`[Webhook wa-web] ✅ Media uploaded: ${filePath}`);
+                        } else {
+                            console.error('[Webhook wa-web] Media upload error:', uploadErr.message);
+                            resolvedMediaUrl = null;
+                        }
+                    }
+                } catch (mediaErr: any) {
+                    console.error('[Webhook wa-web] Media processing error:', mediaErr.message);
+                    resolvedMediaUrl = null;
+                }
+            }
+
             // Save message
             const { error: msgError } = await supabase.from('messages').insert({
                 tenant_id: device.tenant_id,
@@ -168,7 +210,7 @@ export async function POST(request: NextRequest) {
                 phone,
                 direction: 'inbound',
                 content: messageBody,
-                media_url: payload.mediaUrl || payload.media_url || null,
+                media_url: resolvedMediaUrl,
                 message_type: payload.type || 'text',
             });
 
