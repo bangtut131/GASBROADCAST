@@ -538,7 +538,7 @@ export async function sendStatusVideo(sessionId, videoUrl, caption = '', contact
 // ====== Batch status posting (download media ONCE, send to multiple devices) ======
 
 // Per-device timeout: 45 seconds max per upload
-const DEVICE_SEND_TIMEOUT = 45_000;
+const DEVICE_SEND_TIMEOUT = 20_000; // 20s is enough for 25 contacts + 159KB image
 // Max concurrent device uploads (1 = serial, prevents bandwidth/CPU saturation)
 const MAX_CONCURRENT_SENDS = 1;
 
@@ -601,22 +601,15 @@ export async function batchSendStatusImage(mediaUrl, caption, deviceEntries) {
         try {
             const statusJids = buildStatusJidList(session, contacts || []);
             console.log(`[Batch] ⏳ ${sessionId} uploading to ${statusJids.length} contacts...`);
-            // Fire-and-forget: sendMessage for status@broadcast hangs waiting for server ACK
-            // on 100+ contacts. Instead, fire and wait a fixed delay.
-            const sendPromise = session.socket.sendMessage('status@broadcast', {
-                image: buffer,
-                caption: caption || undefined,
-            }, { statusJidList: statusJids });
-            // Wait up to 10s for it to resolve, but don't fail if it doesn't
-            const result = await Promise.race([
-                sendPromise.then(() => 'resolved'),
-                new Promise(r => setTimeout(() => r('timeout'), 10_000)),
-            ]);
-            if (result === 'resolved') {
-                console.log(`[Batch] ✅ ${sessionId} sent (confirmed)`);
-            } else {
-                console.log(`[Batch] ✅ ${sessionId} sent (fire-and-forget, 10s elapsed)`);
-            }
+            await withTimeout(
+                session.socket.sendMessage('status@broadcast', {
+                    image: buffer,
+                    caption: caption || undefined,
+                }, { statusJidList: statusJids }),
+                DEVICE_SEND_TIMEOUT,
+                sessionId
+            );
+            console.log(`[Batch] ✅ ${sessionId} sent`);
             return { sessionId, success: true };
         } catch (err) {
             console.error(`[Batch] ❌ ${sessionId}: ${err.message}`);
@@ -641,20 +634,15 @@ export async function batchSendStatusVideo(mediaUrl, caption, deviceEntries) {
         try {
             const statusJids = buildStatusJidList(session, contacts || []);
             console.log(`[Batch] ⏳ ${sessionId} uploading to ${statusJids.length} contacts...`);
-            // Fire-and-forget: same pattern as image
-            const sendPromise = session.socket.sendMessage('status@broadcast', {
-                video: buffer,
-                caption: caption || undefined,
-            }, { statusJidList: statusJids });
-            const result = await Promise.race([
-                sendPromise.then(() => 'resolved'),
-                new Promise(r => setTimeout(() => r('timeout'), 10_000)),
-            ]);
-            if (result === 'resolved') {
-                console.log(`[Batch] ✅ ${sessionId} sent (confirmed)`);
-            } else {
-                console.log(`[Batch] ✅ ${sessionId} sent (fire-and-forget, 10s elapsed)`);
-            }
+            await withTimeout(
+                session.socket.sendMessage('status@broadcast', {
+                    video: buffer,
+                    caption: caption || undefined,
+                }, { statusJidList: statusJids }),
+                DEVICE_SEND_TIMEOUT,
+                sessionId
+            );
+            console.log(`[Batch] ✅ ${sessionId} sent`);
             return { sessionId, success: true };
         } catch (err) {
             console.error(`[Batch] ❌ ${sessionId}: ${err.message}`);
@@ -666,6 +654,10 @@ export async function batchSendStatusVideo(mediaUrl, caption, deviceEntries) {
 }
 
 // Build the statusJidList from: sender's own JID + device contacts + extra contacts
+// IMPORTANT: Limited to MAX_STATUS_JIDS to prevent Baileys from hanging.
+// Proven: 21 contacts = 1 second success, 110 contacts = infinite hang.
+const MAX_STATUS_JIDS = 25;
+
 function buildStatusJidList(session, extraContacts = []) {
     const myJid = formatJid(session.socket.user.id.split(':')[0]);
     const jids = new Set([myJid]);
@@ -680,8 +672,10 @@ function buildStatusJidList(session, extraContacts = []) {
         jids.add(formatJid(c));
     }
 
-    console.log(`[${session.sessionId}] Status JID list: ${jids.size} contacts`);
-    return [...jids];
+    const allJids = [...jids];
+    const limited = allJids.slice(0, MAX_STATUS_JIDS);
+    console.log(`[${session.sessionId}] Status JID list: ${allJids.length} total → ${limited.length} sent (max ${MAX_STATUS_JIDS})`);
+    return limited;
 }
 
 // Helper: Convert hex color string to ARGB uint32
