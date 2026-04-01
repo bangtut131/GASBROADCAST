@@ -8,6 +8,7 @@ import makeWASocket, {
     useMultiFileAuthState,
     fetchLatestBaileysVersion,
     generateWAMessageFromContent,
+    prepareWAMessageMedia,
     downloadMediaMessage
 } from '@whiskeysockets/baileys';
 import { existsSync, mkdirSync, rmSync, readdirSync, statSync, readFileSync, writeFileSync } from 'fs';
@@ -538,10 +539,12 @@ export async function sendStatusVideo(sessionId, videoUrl, caption = '', contact
 
 // ====== Batch status posting (download media ONCE, send to multiple devices) ======
 
-// Per-device timeout: 45 seconds max per upload
-const DEVICE_SEND_TIMEOUT = 90_000; // 90s per device (background task, tidak blocking user)
-// Max concurrent device uploads (1 = serial, prevents bandwidth/CPU saturation)
+// Max concurrent device sends (1 = serial, prevents bandwidth/CPU saturation)
 const MAX_CONCURRENT_SENDS = 1;
+// Chunked relay: send to contacts in small batches to avoid Baileys encryption timeout
+const CHUNK_SIZE = 10;         // 10 contacts per relay — even with Bad MAC, completes in <30s
+const CHUNK_TIMEOUT = 30_000;  // 30 seconds per chunk
+const CHUNK_DELAY = 2000;      // 2 seconds between chunks
 
 async function downloadMedia(url) {
     const res = await fetch(url);
@@ -587,6 +590,62 @@ async function throttledAll(tasks, limit) {
     return results;
 }
 
+// ===== Chunked Status Relay: upload media ONCE, relay to contacts in small chunks =====
+// Fixes: Baileys hangs when encrypting for 50+ contacts (Bad MAC session renegotiation)
+// Solution: relay same message to chunks of 10 contacts — each chunk finishes quickly
+async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
+    // Step 1: Upload media to WA CDN (ONCE)
+    const mediaMsg = await prepareWAMessageMedia(mediaContent, { upload: sock.waUploadToServer });
+
+    // Step 2: Build message content with caption
+    const msgContent = {};
+    if (mediaMsg.imageMessage) {
+        msgContent.imageMessage = { ...mediaMsg.imageMessage };
+        if (mediaContent.caption) msgContent.imageMessage.caption = mediaContent.caption;
+    } else if (mediaMsg.videoMessage) {
+        msgContent.videoMessage = { ...mediaMsg.videoMessage };
+        if (mediaContent.caption) msgContent.videoMessage.caption = mediaContent.caption;
+    }
+
+    // Step 3: Generate message proto with unique ID
+    const msg = generateWAMessageFromContent('status@broadcast', msgContent, {
+        userJid: sock.user.id,
+    });
+
+    const totalChunks = Math.ceil(allJids.length / CHUNK_SIZE);
+    console.log(`[${sessionId}] 📤 Media uploaded to CDN, relaying to ${allJids.length} contacts in ${totalChunks} chunks of ${CHUNK_SIZE}...`);
+
+    // Step 4: Relay in chunks
+    let sent = 0;
+    let failed = 0;
+    for (let i = 0; i < allJids.length; i += CHUNK_SIZE) {
+        const chunk = allJids.slice(i, i + CHUNK_SIZE);
+        const chunkNum = Math.floor(i / CHUNK_SIZE) + 1;
+        try {
+            await withTimeout(
+                sock.relayMessage('status@broadcast', msg.message, {
+                    messageId: msg.key.id,
+                    statusJidList: chunk,
+                }),
+                CHUNK_TIMEOUT,
+                `${sessionId}-chunk${chunkNum}`
+            );
+            sent += chunk.length;
+            console.log(`[${sessionId}] ✅ Chunk ${chunkNum}/${totalChunks}: ${chunk.length} contacts (total: ${sent}/${allJids.length})`);
+        } catch (err) {
+            failed += chunk.length;
+            console.error(`[${sessionId}] ⚠️ Chunk ${chunkNum}/${totalChunks} failed: ${err.message} (${chunk.length} skipped)`);
+        }
+        // Delay between chunks to avoid overwhelming WA server
+        if (i + CHUNK_SIZE < allJids.length) {
+            await new Promise(r => setTimeout(r, CHUNK_DELAY));
+        }
+    }
+
+    console.log(`[${sessionId}] 📊 Result: ${sent} sent, ${failed} failed out of ${allJids.length}`);
+    return { sent, failed, total: allJids.length };
+}
+
 export async function batchSendStatusImage(mediaUrl, caption, deviceEntries) {
     const rawBuffer = await downloadMedia(mediaUrl);
     const buffer = await compressImage(rawBuffer);
@@ -602,16 +661,19 @@ export async function batchSendStatusImage(mediaUrl, caption, deviceEntries) {
         try {
             const statusJids = buildStatusJidList(session, contacts || []);
             console.log(`[Batch] ⏳ ${sessionId} posting to ${statusJids.length} contacts...`);
-            await withTimeout(
-                session.socket.sendMessage('status@broadcast', {
-                    image: buffer,
-                    caption: caption || undefined,
-                }, { statusJidList: statusJids }),
-                DEVICE_SEND_TIMEOUT,
+            const result = await chunkedStatusRelay(
+                session.socket,
+                { image: buffer, caption: caption || undefined },
+                statusJids,
                 sessionId
             );
-            console.log(`[Batch] ✅ ${sessionId} sent`);
-            return { sessionId, success: true };
+            if (result.sent > 0) {
+                console.log(`[Batch] ✅ ${sessionId}: ${result.sent}/${result.total} contacts reached`);
+                return { sessionId, success: true, sent: result.sent, total: result.total };
+            } else {
+                console.error(`[Batch] ❌ ${sessionId}: All ${result.total} chunks failed`);
+                return { sessionId, success: false, error: 'All chunks failed' };
+            }
         } catch (err) {
             console.error(`[Batch] ❌ ${sessionId}: ${err.message}`);
             return { sessionId, success: false, error: err.message };
@@ -635,16 +697,19 @@ export async function batchSendStatusVideo(mediaUrl, caption, deviceEntries) {
         try {
             const statusJids = buildStatusJidList(session, contacts || []);
             console.log(`[Batch] ⏳ ${sessionId} posting to ${statusJids.length} contacts...`);
-            await withTimeout(
-                session.socket.sendMessage('status@broadcast', {
-                    video: buffer,
-                    caption: caption || undefined,
-                }, { statusJidList: statusJids }),
-                DEVICE_SEND_TIMEOUT,
+            const result = await chunkedStatusRelay(
+                session.socket,
+                { video: buffer, caption: caption || undefined },
+                statusJids,
                 sessionId
             );
-            console.log(`[Batch] ✅ ${sessionId} sent`);
-            return { sessionId, success: true };
+            if (result.sent > 0) {
+                console.log(`[Batch] ✅ ${sessionId}: ${result.sent}/${result.total} contacts reached`);
+                return { sessionId, success: true, sent: result.sent, total: result.total };
+            } else {
+                console.error(`[Batch] ❌ ${sessionId}: All ${result.total} chunks failed`);
+                return { sessionId, success: false, error: 'All chunks failed' };
+            }
         } catch (err) {
             console.error(`[Batch] ❌ ${sessionId}: ${err.message}`);
             return { sessionId, success: false, error: err.message };
@@ -654,32 +719,25 @@ export async function batchSendStatusVideo(mediaUrl, caption, deviceEntries) {
     return await throttledAll(tasks, MAX_CONCURRENT_SENDS);
 }
 
-// Build the statusJidList from: sender's own JID + device contacts + extra contacts
-// LIMIT to MAX_STATUS_JIDS because Baileys encrypts per-contact.
-// Proven: 21 contacts = 1s ✅, 124 contacts = 90s+ timeout ❌
-// 50 is safe middle ground (~5-10s per device)
-const MAX_STATUS_JIDS = 50;
-
+// Build statusJidList: sender's own JID + device contacts + extra contacts
+// NO LIMIT — chunkedStatusRelay handles batching in groups of CHUNK_SIZE
 function buildStatusJidList(session, extraContacts = []) {
     const myJid = formatJid(session.socket.user.id.split(':')[0]);
     const seen = new Set([myJid]);
     const jids = [myJid];
 
-    // Priority 1: Device contacts (verified, from phone book — most likely to have our number saved)
+    // Device contacts (auto-collected from phone book)
     for (const jid of session.deviceContacts || []) {
-        if (jids.length >= MAX_STATUS_JIDS) break;
         if (!seen.has(jid)) { seen.add(jid); jids.push(jid); }
     }
 
-    // Priority 2: Extra contacts from app (fill remaining slots)
+    // Extra contacts from app
     for (const c of extraContacts) {
-        if (jids.length >= MAX_STATUS_JIDS) break;
         const formatted = formatJid(c);
         if (!seen.has(formatted)) { seen.add(formatted); jids.push(formatted); }
     }
 
-    const total = (session.deviceContacts?.size || 0) + extraContacts.length + 1;
-    console.log(`[${session.sessionId}] Status JID list: ${total} total → ${jids.length} sent (max ${MAX_STATUS_JIDS})`);
+    console.log(`[${session.sessionId}] Status JID list: ${jids.length} contacts (chunked relay, no limit)`);
     return jids;
 }
 
