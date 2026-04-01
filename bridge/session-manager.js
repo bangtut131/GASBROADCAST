@@ -655,25 +655,32 @@ export async function batchSendStatusVideo(mediaUrl, caption, deviceEntries) {
 }
 
 // Build the statusJidList from: sender's own JID + device contacts + extra contacts
-// statusJidList is REQUIRED by Baileys — without it, nobody sees the status.
-// Zombie session prevention frees enough resources to handle full contact list.
+// LIMIT to MAX_STATUS_JIDS because Baileys encrypts per-contact.
+// Proven: 21 contacts = 1s ✅, 124 contacts = 90s+ timeout ❌
+// 50 is safe middle ground (~5-10s per device)
+const MAX_STATUS_JIDS = 50;
+
 function buildStatusJidList(session, extraContacts = []) {
     const myJid = formatJid(session.socket.user.id.split(':')[0]);
-    const jids = new Set([myJid]);
+    const seen = new Set([myJid]);
+    const jids = [myJid];
 
-    // Add all device contacts (auto-collected from phone book)
+    // Priority 1: Device contacts (verified, from phone book — most likely to have our number saved)
     for (const jid of session.deviceContacts || []) {
-        jids.add(jid);
+        if (jids.length >= MAX_STATUS_JIDS) break;
+        if (!seen.has(jid)) { seen.add(jid); jids.push(jid); }
     }
 
-    // Add any extra contacts passed from the app
+    // Priority 2: Extra contacts from app (fill remaining slots)
     for (const c of extraContacts) {
-        jids.add(formatJid(c));
+        if (jids.length >= MAX_STATUS_JIDS) break;
+        const formatted = formatJid(c);
+        if (!seen.has(formatted)) { seen.add(formatted); jids.push(formatted); }
     }
 
-    const allJids = [...jids];
-    console.log(`[${session.sessionId}] Status JID list: ${allJids.length} contacts`);
-    return allJids;
+    const total = (session.deviceContacts?.size || 0) + extraContacts.length + 1;
+    console.log(`[${session.sessionId}] Status JID list: ${total} total → ${jids.length} sent (max ${MAX_STATUS_JIDS})`);
+    return jids;
 }
 
 // Helper: Convert hex color string to ARGB uint32
