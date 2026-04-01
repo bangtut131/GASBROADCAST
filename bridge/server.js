@@ -207,6 +207,8 @@ app.post('/api/status/batch/image', auth, async (req, res) => {
         return res.status(400).json({ error: 'devices array required' });
     }
 
+    console.log(`[Batch Image] Received job ${jobId} for ${devices.length} devices, callback: ${callbackUrl}`);
+
     // Respond immediately
     res.json({ success: true, accepted: true, jobId, deviceCount: devices.length });
 
@@ -216,13 +218,15 @@ app.post('/api/status/batch/image', auth, async (req, res) => {
             const results = await batchSendStatusImage(mediaUrl, caption || '', devices);
             if (callbackUrl) {
                 try {
-                    await fetch(callbackUrl, {
+                    console.log(`[Batch Image] Sending callback to: ${callbackUrl}`);
+                    const cbRes = await fetch(callbackUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ jobId, results }),
                     });
+                    console.log(`[Batch Image] Callback response HTTP ${cbRes.status}`);
                 } catch (cbErr) {
-                    console.error('[Batch Callback] Failed:', cbErr.message);
+                    console.error('[Batch Callback] Failed network request:', cbErr.message);
                 }
             }
         } catch (err) {
