@@ -1,0 +1,3 @@
+# Fix sharp: npm ci uses Windows lockfile binaries, npm install resolves correct Linux binaries
+[phases.install]
+cmds = ['npm install --include=optional']

@@ -521,10 +521,10 @@ export async function sendStatusVideo(sessionId, videoUrl, caption = '', contact
 
 // ====== Batch status posting (download media ONCE, send to multiple devices) ======
 
-// Per-device timeout: 30 seconds max per upload
-const DEVICE_SEND_TIMEOUT = 30_000;
-// Max concurrent device uploads (prevents bandwidth saturation)
-const MAX_CONCURRENT_SENDS = 3;
+// Per-device timeout: 45 seconds max per upload
+const DEVICE_SEND_TIMEOUT = 45_000;
+// Max concurrent device uploads (1 = serial, prevents bandwidth/CPU saturation)
+const MAX_CONCURRENT_SENDS = 1;
 
 async function downloadMedia(url) {
     const res = await fetch(url);
