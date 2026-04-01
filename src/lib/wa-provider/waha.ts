@@ -38,7 +38,7 @@ export class WAHAProvider implements WAProvider {
         }
 
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout
+        const timeout = setTimeout(() => controller.abort(), 120000); // 120s timeout
 
         try {
             const response = await fetch(`${this.apiUrl}${path}`, {

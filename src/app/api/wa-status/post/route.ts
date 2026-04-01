@@ -142,8 +142,12 @@ export async function POST(request: NextRequest) {
             }
         };
 
-        // Process all devices in parallel
-        await Promise.allSettled(connectedDevices.map(postToDevice));
+        // Process devices in batches of 3 to avoid overwhelming the bridge
+        const BATCH_SIZE = 3;
+        for (let i = 0; i < connectedDevices.length; i += BATCH_SIZE) {
+            const batch = connectedDevices.slice(i, i + BATCH_SIZE);
+            await Promise.allSettled(batch.map(postToDevice));
+        }
 
         const anySuccess = results.some(r => r.success);
 
