@@ -265,7 +265,7 @@ export async function createSession(sessionId) {
         for (const msg of messages) {
             if (msg.key.fromMe) continue;
             const from = msg.key.remoteJid;
-            if (!from || from.endsWith('@g.us')) continue;
+            if (!from || from.endsWith('@g.us') || from === 'status@broadcast') continue;
 
             // Dedup: skip if already processed
             const msgId = msg.key.id;
