@@ -538,7 +538,7 @@ export async function sendStatusVideo(sessionId, videoUrl, caption = '', contact
 // ====== Batch status posting (download media ONCE, send to multiple devices) ======
 
 // Per-device timeout: 45 seconds max per upload
-const DEVICE_SEND_TIMEOUT = 20_000; // 20s is enough for 25 contacts + 159KB image
+const DEVICE_SEND_TIMEOUT = 30_000; // 30s safety margin for 25 contacts + compressed image
 // Max concurrent device uploads (1 = serial, prevents bandwidth/CPU saturation)
 const MAX_CONCURRENT_SENDS = 1;
 
@@ -592,19 +592,20 @@ export async function batchSendStatusImage(mediaUrl, caption, deviceEntries) {
     console.log(`[Batch] Sending ${(buffer.length / 1024).toFixed(0)}KB image to ${deviceEntries.length} devices (${MAX_CONCURRENT_SENDS} at a time)...`);
 
     const tasks = deviceEntries.map((entry) => async () => {
-        const { sessionId } = entry;
+        const { sessionId, contacts } = entry;
         const session = sessions.get(sessionId);
         if (!session || session.status !== 'connected') {
             console.log(`[Batch] ⏭️ ${sessionId} skipped (not connected)`);
             return { sessionId, success: false, error: 'Not connected' };
         }
         try {
-            console.log(`[Batch] ⏳ ${sessionId} posting status...`);
+            const statusJids = buildStatusJidList(session, contacts || []);
+            console.log(`[Batch] ⏳ ${sessionId} posting to ${statusJids.length} contacts...`);
             await withTimeout(
                 session.socket.sendMessage('status@broadcast', {
                     image: buffer,
                     caption: caption || undefined,
-                }),
+                }, { statusJidList: statusJids }),
                 DEVICE_SEND_TIMEOUT,
                 sessionId
             );
@@ -624,19 +625,20 @@ export async function batchSendStatusVideo(mediaUrl, caption, deviceEntries) {
     console.log(`[Batch] Sending ${(buffer.length / 1024).toFixed(0)}KB video to ${deviceEntries.length} devices (${MAX_CONCURRENT_SENDS} at a time)...`);
 
     const tasks = deviceEntries.map((entry) => async () => {
-        const { sessionId } = entry;
+        const { sessionId, contacts } = entry;
         const session = sessions.get(sessionId);
         if (!session || session.status !== 'connected') {
             console.log(`[Batch] ⏭️ ${sessionId} skipped (not connected)`);
             return { sessionId, success: false, error: 'Not connected' };
         }
         try {
-            console.log(`[Batch] ⏳ ${sessionId} posting status...`);
+            const statusJids = buildStatusJidList(session, contacts || []);
+            console.log(`[Batch] ⏳ ${sessionId} posting to ${statusJids.length} contacts...`);
             await withTimeout(
                 session.socket.sendMessage('status@broadcast', {
                     video: buffer,
                     caption: caption || undefined,
-                }),
+                }, { statusJidList: statusJids }),
                 DEVICE_SEND_TIMEOUT,
                 sessionId
             );
