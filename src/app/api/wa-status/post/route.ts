@@ -107,53 +107,67 @@ export async function POST(request: NextRequest) {
         const provider = getProvider(firstDevice.provider, firstDevice.provider_config as Record<string, string>) as any;
 
         if ((content.type === 'image' || content.type === 'video') && typeof provider.batchSendStatusImage === 'function') {
-            // ====== BATCH MODE: download media once, send to all devices ======
+            // ====== FIRE-AND-FORGET BATCH MODE ======
+            // 1. Create pending logs for all devices
+            // 2. Send batch request to bridge (responds immediately)
+            // 3. Bridge processes in background and calls back with results
+
+            const jobId = `${schedule.id}:${content.id}:${Date.now()}`;
+            const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL 
+                || (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : 'http://localhost:3000');
+            const callbackUrl = `${appBaseUrl}/api/wa-status/batch-callback`;
+
+            // Insert pending logs for all devices
+            const pendingLogs = connectedDevices.map(d => ({
+                tenant_id: d.tenant_id,
+                device_id: d.id,
+                schedule_id: schedule.id,
+                content_id: content.id,
+                status: 'pending',
+                error_message: null,
+                posted_at: new Date().toISOString(),
+            }));
+            await supabase.from('status_logs').insert(pendingLogs);
+
+            // Send batch request (fire-and-forget — bridge responds immediately)
             try {
                 const deviceEntries = connectedDevices.map(d => ({
                     sessionId: d.session_id,
                     contacts: contactPhones,
                 }));
 
-                let batchResults: { sessionId: string; success: boolean; error?: string }[];
                 if (content.type === 'image') {
-                    batchResults = await provider.batchSendStatusImage(content.content_url, caption, deviceEntries);
+                    await provider.batchSendStatusImage(content.content_url, caption, deviceEntries, callbackUrl, jobId);
                 } else {
-                    batchResults = await provider.batchSendStatusVideo(content.content_url, caption, deviceEntries);
+                    await provider.batchSendStatusVideo(content.content_url, caption, deviceEntries, callbackUrl, jobId);
                 }
 
-                // Map results back to device info and log each
-                for (const br of batchResults) {
-                    const device = connectedDevices.find(d => d.session_id === br.sessionId);
-                    if (!device) continue;
-
-                    await supabase.from('status_logs').insert({
-                        tenant_id: device.tenant_id,
-                        device_id: device.id,
-                        schedule_id: schedule.id,
+                return NextResponse.json({
+                    success: true,
+                    accepted: true,
+                    data: {
                         content_id: content.id,
-                        status: br.success ? 'sent' : 'failed',
-                        error_message: br.success ? null : br.error,
-                        posted_at: new Date().toISOString(),
-                    });
-                    results.push({ device_id: device.id, device_name: device.name, success: br.success, error: br.error });
-                }
+                        content_title: content.title,
+                        total_devices: connectedDevices.length,
+                        message: `Status sedang dikirim ke ${connectedDevices.length} device...`,
+                    },
+                });
             } catch (err: any) {
-                // Batch call itself failed — log failure for all devices
-                for (const device of connectedDevices) {
-                    await supabase.from('status_logs').insert({
-                        tenant_id: device.tenant_id,
-                        device_id: device.id,
-                        schedule_id: schedule.id,
-                        content_id: content.id,
-                        status: 'failed',
-                        error_message: err.message,
-                        posted_at: new Date().toISOString(),
-                    });
-                    results.push({ device_id: device.id, device_name: device.name, success: false, error: err.message });
-                }
+                // Batch request itself failed — update logs to failed
+                await supabase
+                    .from('status_logs')
+                    .update({ status: 'failed', error_message: err.message })
+                    .eq('schedule_id', schedule.id)
+                    .eq('content_id', content.id)
+                    .eq('status', 'pending');
+
+                return NextResponse.json({
+                    success: false,
+                    error: `Gagal mengirim batch: ${err.message}`,
+                });
             }
         } else {
-            // ====== FALLBACK: text status or provider without batch support ======
+            // ====== SYNC MODE: text status (fast, no media download) ======
             for (const device of connectedDevices) {
                 try {
                     const devProvider = getProvider(device.provider, device.provider_config as Record<string, string>);
@@ -182,44 +196,42 @@ export async function POST(request: NextRequest) {
                     results.push({ device_id: device.id, device_name: device.name, success: false, error: err.message });
                 }
             }
-        }
 
-        const anySuccess = results.some(r => r.success);
+            const anySuccess = results.some(r => r.success);
 
-        if (anySuccess) {
-            // Update content usage stats
-            await supabase.from('status_contents').update({
-                last_used_at: new Date().toISOString(),
-                use_count: (content.use_count || 0) + 1,
-            }).eq('id', content.id);
+            if (anySuccess) {
+                await supabase.from('status_contents').update({
+                    last_used_at: new Date().toISOString(),
+                    use_count: (content.use_count || 0) + 1,
+                }).eq('id', content.id);
 
-            // Update schedule stats
-            const updates: Record<string, unknown> = {
-                last_posted_at: new Date().toISOString(),
-                total_posted: (schedule.total_posted || 0) + 1,
-            };
-            if (schedule.mode === 'sequence' || schedule.mode === 'manual') {
-                updates.sequence_index = (schedule.sequence_index + 1);
+                const updates: Record<string, unknown> = {
+                    last_posted_at: new Date().toISOString(),
+                    total_posted: (schedule.total_posted || 0) + 1,
+                };
+                if (schedule.mode === 'sequence' || schedule.mode === 'manual') {
+                    updates.sequence_index = (schedule.sequence_index + 1);
+                }
+                await supabase.from('status_schedules').update(updates).eq('id', schedule.id);
             }
-            await supabase.from('status_schedules').update(updates).eq('id', schedule.id);
+
+            const successCount = results.filter(r => r.success).length;
+            const failedCount = results.filter(r => !r.success).length;
+            const failedErrors = results.filter(r => !r.success).map(r => `${r.device_name}: ${r.error}`);
+
+            return NextResponse.json({
+                success: anySuccess,
+                error: anySuccess ? undefined : `Gagal di ${failedCount} device: ${failedErrors.join('; ')}`,
+                data: {
+                    content_id: content.id,
+                    content_title: content.title,
+                    results,
+                    total_devices: connectedDevices.length,
+                    success_count: successCount,
+                    failed_count: failedCount,
+                },
+            });
         }
-
-        const successCount = results.filter(r => r.success).length;
-        const failedCount = results.filter(r => !r.success).length;
-        const failedErrors = results.filter(r => !r.success).map(r => `${r.device_name}: ${r.error}`);
-
-        return NextResponse.json({
-            success: anySuccess,
-            error: anySuccess ? undefined : `Gagal di ${failedCount} device: ${failedErrors.join('; ')}`,
-            data: {
-                content_id: content.id,
-                content_title: content.title,
-                results,
-                total_devices: connectedDevices.length,
-                success_count: successCount,
-                failed_count: failedCount,
-            },
-        });
     } catch (error: any) {
         console.error('[wa-status/post] Unhandled error:', error.message, error.stack);
         return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });

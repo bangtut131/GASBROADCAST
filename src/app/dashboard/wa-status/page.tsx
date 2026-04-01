@@ -191,8 +191,15 @@ export default function WAStatusPage() {
         try {
             const res = await fetch('/api/wa-status/post', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schedule_id: scheduleId }) });
             const data = await res.json();
-            if (!data.success) alert('Gagal post: ' + (data.error || 'Unknown error'));
-            else { alert('✅ Status berhasil diposting!'); await loadSchedules(); await loadLogs(); }
+            if (data.accepted) {
+                alert(`✅ ${data.data?.message || 'Status sedang dikirim di background...'}\n\nCek tab Riwayat untuk melihat progress.`);
+                await loadSchedules(); await loadLogs();
+            } else if (!data.success) {
+                alert('Gagal post: ' + (data.error || 'Unknown error'));
+            } else {
+                alert('✅ Status berhasil diposting!');
+                await loadSchedules(); await loadLogs();
+            }
         } catch (err: any) {
             alert('Gagal post: ' + (err.message || 'Network error'));
         } finally { setPosting(null); }

@@ -197,37 +197,91 @@ app.post('/api/:session/status/video', auth, async (req, res) => {
     result.success ? res.json({ success: true }) : res.status(500).json({ error: result.error });
 });
 
-// ==================== Batch Status Endpoints ====================
-// Download media ONCE, send to multiple devices sequentially
+// ==================== Batch Status Endpoints (Fire-and-Forget) ====================
+// Immediately responds, processes in background, reports via callback
 
 app.post('/api/status/batch/image', auth, async (req, res) => {
-    const { mediaUrl, caption, devices } = req.body;
+    const { mediaUrl, caption, devices, callbackUrl, jobId } = req.body;
     if (!mediaUrl) return res.status(400).json({ error: 'mediaUrl required' });
     if (!devices || !Array.isArray(devices) || devices.length === 0) {
         return res.status(400).json({ error: 'devices array required' });
     }
-    try {
-        const results = await batchSendStatusImage(mediaUrl, caption || '', devices);
-        res.json({ success: true, results });
-    } catch (err) {
-        console.error('[Batch Image] Error:', err.message);
-        res.status(500).json({ error: err.message });
-    }
+
+    // Respond immediately
+    res.json({ success: true, accepted: true, jobId, deviceCount: devices.length });
+
+    // Process in background
+    setImmediate(async () => {
+        try {
+            const results = await batchSendStatusImage(mediaUrl, caption || '', devices);
+            if (callbackUrl) {
+                try {
+                    await fetch(callbackUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ jobId, results }),
+                    });
+                } catch (cbErr) {
+                    console.error('[Batch Callback] Failed:', cbErr.message);
+                }
+            }
+        } catch (err) {
+            console.error('[Batch Image Background] Error:', err.message);
+            if (callbackUrl) {
+                try {
+                    await fetch(callbackUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ jobId, error: err.message }),
+                    });
+                } catch (cbErr) {
+                    console.error('[Batch Callback] Failed:', cbErr.message);
+                }
+            }
+        }
+    });
 });
 
 app.post('/api/status/batch/video', auth, async (req, res) => {
-    const { mediaUrl, caption, devices } = req.body;
+    const { mediaUrl, caption, devices, callbackUrl, jobId } = req.body;
     if (!mediaUrl) return res.status(400).json({ error: 'mediaUrl required' });
     if (!devices || !Array.isArray(devices) || devices.length === 0) {
         return res.status(400).json({ error: 'devices array required' });
     }
-    try {
-        const results = await batchSendStatusVideo(mediaUrl, caption || '', devices);
-        res.json({ success: true, results });
-    } catch (err) {
-        console.error('[Batch Video] Error:', err.message);
-        res.status(500).json({ error: err.message });
-    }
+
+    // Respond immediately
+    res.json({ success: true, accepted: true, jobId, deviceCount: devices.length });
+
+    // Process in background
+    setImmediate(async () => {
+        try {
+            const results = await batchSendStatusVideo(mediaUrl, caption || '', devices);
+            if (callbackUrl) {
+                try {
+                    await fetch(callbackUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ jobId, results }),
+                    });
+                } catch (cbErr) {
+                    console.error('[Batch Callback] Failed:', cbErr.message);
+                }
+            }
+        } catch (err) {
+            console.error('[Batch Video Background] Error:', err.message);
+            if (callbackUrl) {
+                try {
+                    await fetch(callbackUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ jobId, error: err.message }),
+                    });
+                } catch (cbErr) {
+                    console.error('[Batch Callback] Failed:', cbErr.message);
+                }
+            }
+        }
+    });
 });
 
 // ==================== Start ====================

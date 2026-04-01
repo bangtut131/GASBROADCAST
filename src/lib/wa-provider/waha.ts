@@ -211,27 +211,35 @@ export class WAHAProvider implements WAProvider {
         }
     }
 
-    // Batch: download media once, send to all devices in one request
-    async batchSendStatusImage(mediaUrl: string, caption: string, devices: { sessionId: string; contacts: string[] }[]): Promise<{ sessionId: string; success: boolean; error?: string }[]> {
+    // Batch fire-and-forget: bridge responds immediately, processes in background
+    async batchSendStatusImage(
+        mediaUrl: string, caption: string,
+        devices: { sessionId: string; contacts: string[] }[],
+        callbackUrl?: string, jobId?: string,
+    ): Promise<{ accepted: boolean }> {
         const formattedDevices = devices.map(d => ({
             sessionId: d.sessionId,
             contacts: d.contacts.map(c => c.includes('@') ? c : `${c}@c.us`),
         }));
-        const data = await this.request('POST', '/api/status/batch/image', {
-            mediaUrl, caption, devices: formattedDevices,
+        await this.request('POST', '/api/status/batch/image', {
+            mediaUrl, caption, devices: formattedDevices, callbackUrl, jobId,
         });
-        return data.results || [];
+        return { accepted: true };
     }
 
-    async batchSendStatusVideo(mediaUrl: string, caption: string, devices: { sessionId: string; contacts: string[] }[]): Promise<{ sessionId: string; success: boolean; error?: string }[]> {
+    async batchSendStatusVideo(
+        mediaUrl: string, caption: string,
+        devices: { sessionId: string; contacts: string[] }[],
+        callbackUrl?: string, jobId?: string,
+    ): Promise<{ accepted: boolean }> {
         const formattedDevices = devices.map(d => ({
             sessionId: d.sessionId,
             contacts: d.contacts.map(c => c.includes('@') ? c : `${c}@c.us`),
         }));
-        const data = await this.request('POST', '/api/status/batch/video', {
-            mediaUrl, caption, devices: formattedDevices,
+        await this.request('POST', '/api/status/batch/video', {
+            mediaUrl, caption, devices: formattedDevices, callbackUrl, jobId,
         });
-        return data.results || [];
+        return { accepted: true };
     }
 
     handleWebhook(payload: any): ParsedEvent | null {
