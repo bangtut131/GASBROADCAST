@@ -83,21 +83,20 @@ export async function POST(request: NextRequest) {
         // Build caption with variables
         const caption = buildCaption(content.caption || selectedTemplate || '', content, selectedTemplate);
 
-        // Post to ALL connected devices
+        // Post to ALL connected devices (in parallel to avoid timeout)
         const results: { device_id: string; device_name: string; success: boolean; error?: string }[] = [];
 
-        for (const device of connectedDevices) {
+        // Fetch contacts once (all devices share same tenant)
+        const { data: contacts } = await supabase
+            .from('contacts')
+            .select('phone')
+            .eq('tenant_id', schedule.tenant_id)
+            .limit(2000);
+        const contactPhones = (contacts || []).map((c: any) => c.phone);
+
+        const postToDevice = async (device: any) => {
             try {
                 const provider = getProvider(device.provider, device.provider_config as Record<string, string>);
-
-                // Fetch tenant contacts
-                const { data: contacts } = await supabase
-                    .from('contacts')
-                    .select('phone')
-                    .eq('tenant_id', device.tenant_id)
-                    .limit(2000);
-
-                const contactPhones = (contacts || []).map((c: any) => c.phone);
 
                 let result;
                 if (content.type === 'image') {
@@ -133,7 +132,10 @@ export async function POST(request: NextRequest) {
                 });
                 results.push({ device_id: device.id, device_name: device.name, success: false, error: err.message });
             }
-        }
+        };
+
+        // Process all devices in parallel
+        await Promise.allSettled(connectedDevices.map(postToDevice));
 
         const anySuccess = results.some(r => r.success);
 

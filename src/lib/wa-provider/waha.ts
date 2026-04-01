@@ -37,22 +37,30 @@ export class WAHAProvider implements WAProvider {
             headers['X-Api-Key'] = this.apiKey;
         }
 
-        const response = await fetch(`${this.apiUrl}${path}`, {
-            method,
-            headers,
-            body: body ? JSON.stringify(body) : undefined,
-        });
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout
 
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`WAHA API error ${response.status}: ${text}`);
-        }
+        try {
+            const response = await fetch(`${this.apiUrl}${path}`, {
+                method,
+                headers,
+                body: body ? JSON.stringify(body) : undefined,
+                signal: controller.signal,
+            });
 
-        const contentType = response.headers.get('content-type');
-        if (contentType?.includes('application/json')) {
-            return response.json();
+            if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`WAHA API error ${response.status}: ${text}`);
+            }
+
+            const contentType = response.headers.get('content-type');
+            if (contentType?.includes('application/json')) {
+                return response.json();
+            }
+            return response.text();
+        } finally {
+            clearTimeout(timeout);
         }
-        return response.text();
     }
 
     async createSession(config: SessionConfig): Promise<SessionStatus> {

@@ -21,7 +21,13 @@ const PORT = process.env.PORT || 3002;
 const API_SECRET = process.env.API_SECRET || 'bridge-secret';
 
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
+
+// Increase server timeout for status posting (media download + upload can be slow)
+app.use((req, res, next) => {
+    res.setTimeout(90000); // 90s timeout
+    next();
+});
 
 // ==================== Health Check (no auth) ====================
 app.get('/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
