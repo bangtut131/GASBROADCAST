@@ -538,7 +538,7 @@ export async function sendStatusVideo(sessionId, videoUrl, caption = '', contact
 // ====== Batch status posting (download media ONCE, send to multiple devices) ======
 
 // Per-device timeout: 45 seconds max per upload
-const DEVICE_SEND_TIMEOUT = 30_000; // 30s safety margin for 25 contacts + compressed image
+const DEVICE_SEND_TIMEOUT = 90_000; // 90s per device (background task, tidak blocking user)
 // Max concurrent device uploads (1 = serial, prevents bandwidth/CPU saturation)
 const MAX_CONCURRENT_SENDS = 1;
 
@@ -654,10 +654,8 @@ export async function batchSendStatusVideo(mediaUrl, caption, deviceEntries) {
 }
 
 // Build the statusJidList from: sender's own JID + device contacts + extra contacts
-// IMPORTANT: Limited to MAX_STATUS_JIDS to prevent Baileys from hanging.
-// Proven: 21 contacts = 1 second success, 110 contacts = infinite hang.
-const MAX_STATUS_JIDS = 25;
-
+// statusJidList is REQUIRED by Baileys — without it, nobody sees the status.
+// Zombie session prevention frees enough resources to handle full contact list.
 function buildStatusJidList(session, extraContacts = []) {
     const myJid = formatJid(session.socket.user.id.split(':')[0]);
     const jids = new Set([myJid]);
@@ -673,9 +671,8 @@ function buildStatusJidList(session, extraContacts = []) {
     }
 
     const allJids = [...jids];
-    const limited = allJids.slice(0, MAX_STATUS_JIDS);
-    console.log(`[${session.sessionId}] Status JID list: ${allJids.length} total → ${limited.length} sent (max ${MAX_STATUS_JIDS})`);
-    return limited;
+    console.log(`[${session.sessionId}] Status JID list: ${allJids.length} contacts`);
+    return allJids;
 }
 
 // Helper: Convert hex color string to ARGB uint32
