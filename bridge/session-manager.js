@@ -83,6 +83,7 @@ export async function createSession(sessionId) {
         phoneNumber: null,
         socket: null,
         deviceContacts: new Set(), // Auto-collected from device's phone book
+        qrRetryCount: 0, // Track how many QR cycles without scan
     };
     sessions.set(sessionId, sessionData);
 
@@ -195,12 +196,20 @@ export async function createSession(sessionId) {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
+            sessionData.qrRetryCount = (sessionData.qrRetryCount || 0) + 1;
+            const MAX_QR_RETRIES = 5; // Stop after 5 QR cycles (~100s) to prevent zombie sessions
+            if (sessionData.qrRetryCount > MAX_QR_RETRIES) {
+                console.log(`[${sessionId}] ⛔ QR not scanned after ${MAX_QR_RETRIES} attempts — stopping session to save resources`);
+                sessionData.status = 'qr_timeout';
+                try { sock.end(undefined); } catch {}
+                return; // Don't reconnect — user must manually re-add device
+            }
             try {
                 const qrBase64 = await QRCode.toDataURL(qr);
                 sessionData.qr = qr;
                 sessionData.qrBase64 = qrBase64;
                 sessionData.status = 'qr';
-                console.log(`[${sessionId}] QR ready — scan now`);
+                console.log(`[${sessionId}] QR ready — scan now (attempt ${sessionData.qrRetryCount}/${MAX_QR_RETRIES})`);
             } catch (e) {
                 console.error(`[${sessionId}] QR generation error:`, e.message);
             }
@@ -211,6 +220,12 @@ export async function createSession(sessionId) {
             const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
             console.log(`[${sessionId}] Closed. Code: ${statusCode}. Reconnect: ${shouldReconnect}`);
+
+            // Don't reconnect if QR timed out (zombie prevention)
+            if (sessionData.status === 'qr_timeout') {
+                console.log(`[${sessionId}] ⛔ Not reconnecting — QR timeout (zombie prevention)`);
+                return;
+            }
 
             if (shouldReconnect) {
                 sessionData.status = 'reconnecting';
@@ -237,6 +252,7 @@ export async function createSession(sessionId) {
             sessionData.status = 'connected';
             sessionData.qr = null;
             sessionData.qrBase64 = null;
+            sessionData.qrRetryCount = 0; // Reset QR counter on successful connect
             sessionData.phoneNumber = user?.id ? user.id.split(':')[0] : null;
             console.log(`[${sessionId}] ✅ Connected! +${sessionData.phoneNumber}`);
             await sendWebhook(sessionId, 'session.connected', {
@@ -585,15 +601,22 @@ export async function batchSendStatusImage(mediaUrl, caption, deviceEntries) {
         try {
             const statusJids = buildStatusJidList(session, contacts || []);
             console.log(`[Batch] ⏳ ${sessionId} uploading to ${statusJids.length} contacts...`);
-            await withTimeout(
-                session.socket.sendMessage('status@broadcast', {
-                    image: buffer,
-                    caption: caption || undefined,
-                }, { statusJidList: statusJids }),
-                DEVICE_SEND_TIMEOUT,
-                sessionId
-            );
-            console.log(`[Batch] ✅ ${sessionId} sent`);
+            // Fire-and-forget: sendMessage for status@broadcast hangs waiting for server ACK
+            // on 100+ contacts. Instead, fire and wait a fixed delay.
+            const sendPromise = session.socket.sendMessage('status@broadcast', {
+                image: buffer,
+                caption: caption || undefined,
+            }, { statusJidList: statusJids });
+            // Wait up to 10s for it to resolve, but don't fail if it doesn't
+            const result = await Promise.race([
+                sendPromise.then(() => 'resolved'),
+                new Promise(r => setTimeout(() => r('timeout'), 10_000)),
+            ]);
+            if (result === 'resolved') {
+                console.log(`[Batch] ✅ ${sessionId} sent (confirmed)`);
+            } else {
+                console.log(`[Batch] ✅ ${sessionId} sent (fire-and-forget, 10s elapsed)`);
+            }
             return { sessionId, success: true };
         } catch (err) {
             console.error(`[Batch] ❌ ${sessionId}: ${err.message}`);
@@ -618,15 +641,20 @@ export async function batchSendStatusVideo(mediaUrl, caption, deviceEntries) {
         try {
             const statusJids = buildStatusJidList(session, contacts || []);
             console.log(`[Batch] ⏳ ${sessionId} uploading to ${statusJids.length} contacts...`);
-            await withTimeout(
-                session.socket.sendMessage('status@broadcast', {
-                    video: buffer,
-                    caption: caption || undefined,
-                }, { statusJidList: statusJids }),
-                DEVICE_SEND_TIMEOUT,
-                sessionId
-            );
-            console.log(`[Batch] ✅ ${sessionId} sent`);
+            // Fire-and-forget: same pattern as image
+            const sendPromise = session.socket.sendMessage('status@broadcast', {
+                video: buffer,
+                caption: caption || undefined,
+            }, { statusJidList: statusJids });
+            const result = await Promise.race([
+                sendPromise.then(() => 'resolved'),
+                new Promise(r => setTimeout(() => r('timeout'), 10_000)),
+            ]);
+            if (result === 'resolved') {
+                console.log(`[Batch] ✅ ${sessionId} sent (confirmed)`);
+            } else {
+                console.log(`[Batch] ✅ ${sessionId} sent (fire-and-forget, 10s elapsed)`);
+            }
             return { sessionId, success: true };
         } catch (err) {
             console.error(`[Batch] ❌ ${sessionId}: ${err.message}`);
