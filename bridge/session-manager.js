@@ -521,66 +521,120 @@ export async function sendStatusVideo(sessionId, videoUrl, caption = '', contact
 
 // ====== Batch status posting (download media ONCE, send to multiple devices) ======
 
+// Per-device timeout: 30 seconds max per upload
+const DEVICE_SEND_TIMEOUT = 30_000;
+// Max concurrent device uploads (prevents bandwidth saturation)
+const MAX_CONCURRENT_SENDS = 3;
+
 async function downloadMedia(url) {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Download failed: ${res.status}`);
     return Buffer.from(await res.arrayBuffer());
 }
 
-export async function batchSendStatusImage(mediaUrl, caption, deviceEntries) {
-    const buffer = await downloadMedia(mediaUrl);
-    console.log(`[Batch] Downloaded image (${(buffer.length / 1024).toFixed(1)}KB), sending to ${deviceEntries.length} devices in parallel...`);
+// Compress image to max 1080px wide, 80% quality JPEG — reduces 4MB to ~200-400KB
+async function compressImage(buffer) {
+    try {
+        const sharp = (await import('sharp')).default;
+        const compressed = await sharp(buffer)
+            .resize(1080, 1080, { fit: 'inside', withoutEnlargement: true })
+            .jpeg({ quality: 80 })
+            .toBuffer();
+        console.log(`[Batch] Compressed image: ${(buffer.length / 1024).toFixed(0)}KB → ${(compressed.length / 1024).toFixed(0)}KB`);
+        return compressed;
+    } catch (err) {
+        console.warn(`[Batch] sharp not available, using original image: ${err.message}`);
+        return buffer; // fallback: use original if sharp fails
+    }
+}
 
-    const promises = deviceEntries.map(async (entry) => {
+// Timeout wrapper: rejects after ms milliseconds
+function withTimeout(promise, ms, label) {
+    return Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout after ${ms / 1000}s`)), ms)),
+    ]);
+}
+
+// Throttled parallel: runs at most `limit` tasks concurrently
+async function throttledAll(tasks, limit) {
+    const results = [];
+    let idx = 0;
+    const workers = Array.from({ length: Math.min(limit, tasks.length) }, async () => {
+        while (idx < tasks.length) {
+            const i = idx++;
+            results[i] = await tasks[i]();
+        }
+    });
+    await Promise.all(workers);
+    return results;
+}
+
+export async function batchSendStatusImage(mediaUrl, caption, deviceEntries) {
+    const rawBuffer = await downloadMedia(mediaUrl);
+    const buffer = await compressImage(rawBuffer);
+    console.log(`[Batch] Sending ${(buffer.length / 1024).toFixed(0)}KB image to ${deviceEntries.length} devices (${MAX_CONCURRENT_SENDS} at a time)...`);
+
+    const tasks = deviceEntries.map((entry) => async () => {
         const { sessionId, contacts } = entry;
         const session = sessions.get(sessionId);
         if (!session || session.status !== 'connected') {
+            console.log(`[Batch] ⏭️ ${sessionId} skipped (not connected)`);
             return { sessionId, success: false, error: 'Not connected' };
         }
         try {
             const statusJids = buildStatusJidList(session, contacts || []);
-            console.log(`[Batch] ${sessionId} Status JID list: ${statusJids.length} contacts`);
-            await session.socket.sendMessage('status@broadcast', {
-                image: buffer,
-                caption: caption || undefined,
-            }, { statusJidList: statusJids });
+            console.log(`[Batch] ⏳ ${sessionId} uploading to ${statusJids.length} contacts...`);
+            await withTimeout(
+                session.socket.sendMessage('status@broadcast', {
+                    image: buffer,
+                    caption: caption || undefined,
+                }, { statusJidList: statusJids }),
+                DEVICE_SEND_TIMEOUT,
+                sessionId
+            );
             console.log(`[Batch] ✅ ${sessionId} sent`);
             return { sessionId, success: true };
         } catch (err) {
-            console.error(`[Batch] ❌ ${sessionId}:`, err.message);
+            console.error(`[Batch] ❌ ${sessionId}: ${err.message}`);
             return { sessionId, success: false, error: err.message };
         }
     });
 
-    return await Promise.all(promises);
+    return await throttledAll(tasks, MAX_CONCURRENT_SENDS);
 }
 
 export async function batchSendStatusVideo(mediaUrl, caption, deviceEntries) {
     const buffer = await downloadMedia(mediaUrl);
-    console.log(`[Batch] Downloaded video (${(buffer.length / 1024).toFixed(1)}KB), sending to ${deviceEntries.length} devices in parallel...`);
+    console.log(`[Batch] Sending ${(buffer.length / 1024).toFixed(0)}KB video to ${deviceEntries.length} devices (${MAX_CONCURRENT_SENDS} at a time)...`);
 
-    const promises = deviceEntries.map(async (entry) => {
+    const tasks = deviceEntries.map((entry) => async () => {
         const { sessionId, contacts } = entry;
         const session = sessions.get(sessionId);
         if (!session || session.status !== 'connected') {
+            console.log(`[Batch] ⏭️ ${sessionId} skipped (not connected)`);
             return { sessionId, success: false, error: 'Not connected' };
         }
         try {
             const statusJids = buildStatusJidList(session, contacts || []);
-            console.log(`[Batch] ${sessionId} Status JID list: ${statusJids.length} contacts`);
-            await session.socket.sendMessage('status@broadcast', {
-                video: buffer,
-                caption: caption || undefined,
-            }, { statusJidList: statusJids });
+            console.log(`[Batch] ⏳ ${sessionId} uploading to ${statusJids.length} contacts...`);
+            await withTimeout(
+                session.socket.sendMessage('status@broadcast', {
+                    video: buffer,
+                    caption: caption || undefined,
+                }, { statusJidList: statusJids }),
+                DEVICE_SEND_TIMEOUT,
+                sessionId
+            );
             console.log(`[Batch] ✅ ${sessionId} sent`);
             return { sessionId, success: true };
         } catch (err) {
-            console.error(`[Batch] ❌ ${sessionId}:`, err.message);
+            console.error(`[Batch] ❌ ${sessionId}: ${err.message}`);
             return { sessionId, success: false, error: err.message };
         }
     });
 
-    return await Promise.all(promises);
+    return await throttledAll(tasks, MAX_CONCURRENT_SENDS);
 }
 
 // Build the statusJidList from: sender's own JID + device contacts + extra contacts
