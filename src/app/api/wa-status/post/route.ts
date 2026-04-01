@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
         // Build caption with variables
         const caption = buildCaption(content.caption || selectedTemplate || '', content, selectedTemplate);
 
-        // Post to ALL connected devices (in parallel to avoid timeout)
+        // Post to ALL connected devices
         const results: { device_id: string; device_name: string; success: boolean; error?: string }[] = [];
 
         // Fetch contacts once (all devices share same tenant)
@@ -102,51 +102,86 @@ export async function POST(request: NextRequest) {
             .limit(2000);
         const contactPhones = (contacts || []).map((c: any) => c.phone);
 
-        const postToDevice = async (device: any) => {
-            try {
-                const provider = getProvider(device.provider, device.provider_config as Record<string, string>);
+        // Use the first device's provider config (all devices share same bridge)
+        const firstDevice = connectedDevices[0];
+        const provider = getProvider(firstDevice.provider, firstDevice.provider_config as Record<string, string>) as any;
 
-                let result;
+        if ((content.type === 'image' || content.type === 'video') && typeof provider.batchSendStatusImage === 'function') {
+            // ====== BATCH MODE: download media once, send to all devices ======
+            try {
+                const deviceEntries = connectedDevices.map(d => ({
+                    sessionId: d.session_id,
+                    contacts: contactPhones,
+                }));
+
+                let batchResults: { sessionId: string; success: boolean; error?: string }[];
                 if (content.type === 'image') {
-                    result = await provider.sendStatusImage(device.session_id, content.content_url, caption, contactPhones);
-                } else if (content.type === 'video') {
-                    result = await provider.sendStatusVideo(device.session_id, content.content_url, caption, contactPhones);
+                    batchResults = await provider.batchSendStatusImage(content.content_url, caption, deviceEntries);
                 } else {
-                    result = await provider.sendStatusText(device.session_id, caption || content.caption || '', '#1D4ED8', 1, contactPhones);
+                    batchResults = await provider.batchSendStatusVideo(content.content_url, caption, deviceEntries);
                 }
 
-                // Log per device
-                await supabase.from('status_logs').insert({
-                    tenant_id: device.tenant_id,
-                    device_id: device.id,
-                    schedule_id: schedule.id,
-                    content_id: content.id,
-                    status: result.success ? 'sent' : 'failed',
-                    error_message: result.success ? null : result.error,
-                    posted_at: new Date().toISOString(),
-                });
+                // Map results back to device info and log each
+                for (const br of batchResults) {
+                    const device = connectedDevices.find(d => d.session_id === br.sessionId);
+                    if (!device) continue;
 
-                results.push({ device_id: device.id, device_name: device.name, success: result.success, error: result.error });
+                    await supabase.from('status_logs').insert({
+                        tenant_id: device.tenant_id,
+                        device_id: device.id,
+                        schedule_id: schedule.id,
+                        content_id: content.id,
+                        status: br.success ? 'sent' : 'failed',
+                        error_message: br.success ? null : br.error,
+                        posted_at: new Date().toISOString(),
+                    });
+                    results.push({ device_id: device.id, device_name: device.name, success: br.success, error: br.error });
+                }
             } catch (err: any) {
-                // Log failure for this device
-                await supabase.from('status_logs').insert({
-                    tenant_id: device.tenant_id,
-                    device_id: device.id,
-                    schedule_id: schedule.id,
-                    content_id: content.id,
-                    status: 'failed',
-                    error_message: err.message,
-                    posted_at: new Date().toISOString(),
-                });
-                results.push({ device_id: device.id, device_name: device.name, success: false, error: err.message });
+                // Batch call itself failed — log failure for all devices
+                for (const device of connectedDevices) {
+                    await supabase.from('status_logs').insert({
+                        tenant_id: device.tenant_id,
+                        device_id: device.id,
+                        schedule_id: schedule.id,
+                        content_id: content.id,
+                        status: 'failed',
+                        error_message: err.message,
+                        posted_at: new Date().toISOString(),
+                    });
+                    results.push({ device_id: device.id, device_name: device.name, success: false, error: err.message });
+                }
             }
-        };
+        } else {
+            // ====== FALLBACK: text status or provider without batch support ======
+            for (const device of connectedDevices) {
+                try {
+                    const devProvider = getProvider(device.provider, device.provider_config as Record<string, string>);
+                    const result = await devProvider.sendStatusText(device.session_id, caption || content.caption || '', '#1D4ED8', 1, contactPhones);
 
-        // Process devices in batches of 3 to avoid overwhelming the bridge
-        const BATCH_SIZE = 3;
-        for (let i = 0; i < connectedDevices.length; i += BATCH_SIZE) {
-            const batch = connectedDevices.slice(i, i + BATCH_SIZE);
-            await Promise.allSettled(batch.map(postToDevice));
+                    await supabase.from('status_logs').insert({
+                        tenant_id: device.tenant_id,
+                        device_id: device.id,
+                        schedule_id: schedule.id,
+                        content_id: content.id,
+                        status: result.success ? 'sent' : 'failed',
+                        error_message: result.success ? null : result.error,
+                        posted_at: new Date().toISOString(),
+                    });
+                    results.push({ device_id: device.id, device_name: device.name, success: result.success, error: result.error });
+                } catch (err: any) {
+                    await supabase.from('status_logs').insert({
+                        tenant_id: device.tenant_id,
+                        device_id: device.id,
+                        schedule_id: schedule.id,
+                        content_id: content.id,
+                        status: 'failed',
+                        error_message: err.message,
+                        posted_at: new Date().toISOString(),
+                    });
+                    results.push({ device_id: device.id, device_name: device.name, success: false, error: err.message });
+                }
+            }
         }
 
         const anySuccess = results.some(r => r.success);

@@ -12,6 +12,7 @@ import {
     createSession, deleteSession,
     sendText, sendImage, sendVideo,
     sendStatusText, sendStatusImage, sendStatusVideo,
+    batchSendStatusImage, batchSendStatusVideo,
     getSession, getAllSessions, getQR,
     restorePersistedSessions,
 } from './session-manager.js';
@@ -194,6 +195,39 @@ app.post('/api/:session/status/video', auth, async (req, res) => {
     if (!mediaUrl) return res.status(400).json({ error: 'file.url required' });
     const result = await sendStatusVideo(req.params.session, mediaUrl, caption || '', contacts || []);
     result.success ? res.json({ success: true }) : res.status(500).json({ error: result.error });
+});
+
+// ==================== Batch Status Endpoints ====================
+// Download media ONCE, send to multiple devices sequentially
+
+app.post('/api/status/batch/image', auth, async (req, res) => {
+    const { mediaUrl, caption, devices } = req.body;
+    if (!mediaUrl) return res.status(400).json({ error: 'mediaUrl required' });
+    if (!devices || !Array.isArray(devices) || devices.length === 0) {
+        return res.status(400).json({ error: 'devices array required' });
+    }
+    try {
+        const results = await batchSendStatusImage(mediaUrl, caption || '', devices);
+        res.json({ success: true, results });
+    } catch (err) {
+        console.error('[Batch Image] Error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/status/batch/video', auth, async (req, res) => {
+    const { mediaUrl, caption, devices } = req.body;
+    if (!mediaUrl) return res.status(400).json({ error: 'mediaUrl required' });
+    if (!devices || !Array.isArray(devices) || devices.length === 0) {
+        return res.status(400).json({ error: 'devices array required' });
+    }
+    try {
+        const results = await batchSendStatusVideo(mediaUrl, caption || '', devices);
+        res.json({ success: true, results });
+    } catch (err) {
+        console.error('[Batch Video] Error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // ==================== Start ====================

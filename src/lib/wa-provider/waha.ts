@@ -211,6 +211,29 @@ export class WAHAProvider implements WAProvider {
         }
     }
 
+    // Batch: download media once, send to all devices in one request
+    async batchSendStatusImage(mediaUrl: string, caption: string, devices: { sessionId: string; contacts: string[] }[]): Promise<{ sessionId: string; success: boolean; error?: string }[]> {
+        const formattedDevices = devices.map(d => ({
+            sessionId: d.sessionId,
+            contacts: d.contacts.map(c => c.includes('@') ? c : `${c}@c.us`),
+        }));
+        const data = await this.request('POST', '/api/status/batch/image', {
+            mediaUrl, caption, devices: formattedDevices,
+        });
+        return data.results || [];
+    }
+
+    async batchSendStatusVideo(mediaUrl: string, caption: string, devices: { sessionId: string; contacts: string[] }[]): Promise<{ sessionId: string; success: boolean; error?: string }[]> {
+        const formattedDevices = devices.map(d => ({
+            sessionId: d.sessionId,
+            contacts: d.contacts.map(c => c.includes('@') ? c : `${c}@c.us`),
+        }));
+        const data = await this.request('POST', '/api/status/batch/video', {
+            mediaUrl, caption, devices: formattedDevices,
+        });
+        return data.results || [];
+    }
+
     handleWebhook(payload: any): ParsedEvent | null {
         if (!payload?.event) return null;
 

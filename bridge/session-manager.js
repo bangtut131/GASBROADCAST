@@ -519,6 +519,71 @@ export async function sendStatusVideo(sessionId, videoUrl, caption = '', contact
     } catch (err) { return { success: false, error: err.message }; }
 }
 
+// ====== Batch status posting (download media ONCE, send to multiple devices) ======
+
+async function downloadMedia(url) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+    return Buffer.from(await res.arrayBuffer());
+}
+
+export async function batchSendStatusImage(mediaUrl, caption, deviceEntries) {
+    // Download once
+    const buffer = await downloadMedia(mediaUrl);
+    console.log(`[Batch] Downloaded image (${(buffer.length / 1024).toFixed(1)}KB), sending to ${deviceEntries.length} devices...`);
+
+    const results = [];
+    for (const entry of deviceEntries) {
+        const { sessionId, contacts } = entry;
+        const session = sessions.get(sessionId);
+        if (!session || session.status !== 'connected') {
+            results.push({ sessionId, success: false, error: 'Not connected' });
+            continue;
+        }
+        try {
+            const statusJids = buildStatusJidList(session, contacts || []);
+            await session.socket.sendMessage('status@broadcast', {
+                image: buffer,
+                caption: caption || undefined,
+            }, { statusJidList: statusJids });
+            console.log(`[Batch] ✅ ${sessionId} sent`);
+            results.push({ sessionId, success: true });
+        } catch (err) {
+            console.error(`[Batch] ❌ ${sessionId}:`, err.message);
+            results.push({ sessionId, success: false, error: err.message });
+        }
+    }
+    return results;
+}
+
+export async function batchSendStatusVideo(mediaUrl, caption, deviceEntries) {
+    const buffer = await downloadMedia(mediaUrl);
+    console.log(`[Batch] Downloaded video (${(buffer.length / 1024).toFixed(1)}KB), sending to ${deviceEntries.length} devices...`);
+
+    const results = [];
+    for (const entry of deviceEntries) {
+        const { sessionId, contacts } = entry;
+        const session = sessions.get(sessionId);
+        if (!session || session.status !== 'connected') {
+            results.push({ sessionId, success: false, error: 'Not connected' });
+            continue;
+        }
+        try {
+            const statusJids = buildStatusJidList(session, contacts || []);
+            await session.socket.sendMessage('status@broadcast', {
+                video: buffer,
+                caption: caption || undefined,
+            }, { statusJidList: statusJids });
+            console.log(`[Batch] ✅ ${sessionId} sent`);
+            results.push({ sessionId, success: true });
+        } catch (err) {
+            console.error(`[Batch] ❌ ${sessionId}:`, err.message);
+            results.push({ sessionId, success: false, error: err.message });
+        }
+    }
+    return results;
+}
+
 // Build the statusJidList from: sender's own JID + device contacts + extra contacts
 function buildStatusJidList(session, extraContacts = []) {
     const myJid = formatJid(session.socket.user.id.split(':')[0]);
