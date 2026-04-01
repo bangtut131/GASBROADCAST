@@ -168,7 +168,8 @@ export async function createSession(sessionId) {
             printQRInTerminal: false,
             browser: ['Ubuntu', 'Chrome', '124.0.0'],
             generateHighQualityLinkPreview: false,
-            connectTimeoutMs: 60000,
+            connectTimeoutMs: 180_000,        // 3 min — also used as relay timeout for status broadcast
+            defaultQueryTimeoutMs: 180_000,   // 3 min — prevents "Timed Out" on 100+ contact statusJidList
             keepAliveIntervalMs: 30000,
             retryRequestDelayMs: 2000,
             syncFullHistory: false,
