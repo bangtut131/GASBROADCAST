@@ -528,60 +528,59 @@ async function downloadMedia(url) {
 }
 
 export async function batchSendStatusImage(mediaUrl, caption, deviceEntries) {
-    // Download once
     const buffer = await downloadMedia(mediaUrl);
-    console.log(`[Batch] Downloaded image (${(buffer.length / 1024).toFixed(1)}KB), sending to ${deviceEntries.length} devices...`);
+    console.log(`[Batch] Downloaded image (${(buffer.length / 1024).toFixed(1)}KB), sending to ${deviceEntries.length} devices in parallel...`);
 
-    const results = [];
-    for (const entry of deviceEntries) {
+    const promises = deviceEntries.map(async (entry) => {
         const { sessionId, contacts } = entry;
         const session = sessions.get(sessionId);
         if (!session || session.status !== 'connected') {
-            results.push({ sessionId, success: false, error: 'Not connected' });
-            continue;
+            return { sessionId, success: false, error: 'Not connected' };
         }
         try {
             const statusJids = buildStatusJidList(session, contacts || []);
+            console.log(`[Batch] ${sessionId} Status JID list: ${statusJids.length} contacts`);
             await session.socket.sendMessage('status@broadcast', {
                 image: buffer,
                 caption: caption || undefined,
             }, { statusJidList: statusJids });
             console.log(`[Batch] ✅ ${sessionId} sent`);
-            results.push({ sessionId, success: true });
+            return { sessionId, success: true };
         } catch (err) {
             console.error(`[Batch] ❌ ${sessionId}:`, err.message);
-            results.push({ sessionId, success: false, error: err.message });
+            return { sessionId, success: false, error: err.message };
         }
-    }
-    return results;
+    });
+
+    return await Promise.all(promises);
 }
 
 export async function batchSendStatusVideo(mediaUrl, caption, deviceEntries) {
     const buffer = await downloadMedia(mediaUrl);
-    console.log(`[Batch] Downloaded video (${(buffer.length / 1024).toFixed(1)}KB), sending to ${deviceEntries.length} devices...`);
+    console.log(`[Batch] Downloaded video (${(buffer.length / 1024).toFixed(1)}KB), sending to ${deviceEntries.length} devices in parallel...`);
 
-    const results = [];
-    for (const entry of deviceEntries) {
+    const promises = deviceEntries.map(async (entry) => {
         const { sessionId, contacts } = entry;
         const session = sessions.get(sessionId);
         if (!session || session.status !== 'connected') {
-            results.push({ sessionId, success: false, error: 'Not connected' });
-            continue;
+            return { sessionId, success: false, error: 'Not connected' };
         }
         try {
             const statusJids = buildStatusJidList(session, contacts || []);
+            console.log(`[Batch] ${sessionId} Status JID list: ${statusJids.length} contacts`);
             await session.socket.sendMessage('status@broadcast', {
                 video: buffer,
                 caption: caption || undefined,
             }, { statusJidList: statusJids });
             console.log(`[Batch] ✅ ${sessionId} sent`);
-            results.push({ sessionId, success: true });
+            return { sessionId, success: true };
         } catch (err) {
             console.error(`[Batch] ❌ ${sessionId}:`, err.message);
-            results.push({ sessionId, success: false, error: err.message });
+            return { sessionId, success: false, error: err.message };
         }
-    }
-    return results;
+    });
+
+    return await Promise.all(promises);
 }
 
 // Build the statusJidList from: sender's own JID + device contacts + extra contacts
