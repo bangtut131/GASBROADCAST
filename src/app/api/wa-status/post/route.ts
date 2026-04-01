@@ -165,15 +165,20 @@ export async function POST(request: NextRequest) {
             await supabase.from('status_schedules').update(updates).eq('id', schedule.id);
         }
 
+        const successCount = results.filter(r => r.success).length;
+        const failedCount = results.filter(r => !r.success).length;
+        const failedErrors = results.filter(r => !r.success).map(r => `${r.device_name}: ${r.error}`);
+
         return NextResponse.json({
             success: anySuccess,
+            error: anySuccess ? undefined : `Gagal di ${failedCount} device: ${failedErrors.join('; ')}`,
             data: {
                 content_id: content.id,
                 content_title: content.title,
                 results,
                 total_devices: connectedDevices.length,
-                success_count: results.filter(r => r.success).length,
-                failed_count: results.filter(r => !r.success).length,
+                success_count: successCount,
+                failed_count: failedCount,
             },
         });
     } catch (error: any) {
