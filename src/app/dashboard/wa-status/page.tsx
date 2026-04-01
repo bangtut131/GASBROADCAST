@@ -193,7 +193,9 @@ export default function WAStatusPage() {
             const data = await res.json();
             if (!data.success) alert('Gagal post: ' + (data.error || 'Unknown error'));
             else { alert('✅ Status berhasil diposting!'); await loadSchedules(); await loadLogs(); }
-        } catch { } finally { setPosting(null); }
+        } catch (err: any) {
+            alert('Gagal post: ' + (err.message || 'Network error'));
+        } finally { setPosting(null); }
     };
 
     const duplicateSchedule = (s: Schedule) => {

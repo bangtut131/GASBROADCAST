@@ -24,15 +24,23 @@ export async function POST(request: NextRequest) {
         const body = await request.json();
         const { schedule_id, content_id } = body;
 
-        // Get schedule
-        const { data: schedule } = await supabase
+        // Get schedule (for manual "Post Sekarang", allow inactive schedules too)
+        const scheduleQuery = supabase
             .from('status_schedules')
             .select('*')
-            .eq('id', schedule_id)
-            .eq('is_active', true)
-            .single();
+            .eq('id', schedule_id);
 
-        if (!schedule) return NextResponse.json({ error: 'Schedule not found or inactive' }, { status: 404 });
+        // Only filter active for cron-triggered posts
+        if (isAuthorizedCron) {
+            scheduleQuery.eq('is_active', true);
+        }
+
+        const { data: schedule, error: schedError } = await scheduleQuery.single();
+
+        if (!schedule) {
+            console.error('[wa-status/post] Schedule not found:', schedule_id, schedError?.message);
+            return NextResponse.json({ error: 'Schedule not found' + (schedError ? `: ${schedError.message}` : '') }, { status: 404 });
+        }
 
         // Resolve device_ids (backward compat: fall back to device_id)
         const deviceIds: string[] = (schedule.device_ids && schedule.device_ids.length > 0)
@@ -169,7 +177,8 @@ export async function POST(request: NextRequest) {
             },
         });
     } catch (error: any) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        console.error('[wa-status/post] Unhandled error:', error.message, error.stack);
+        return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });
     }
 }
 
