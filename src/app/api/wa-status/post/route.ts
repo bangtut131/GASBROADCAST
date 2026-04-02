@@ -129,6 +129,14 @@ export async function POST(request: NextRequest) {
             }));
             await supabase.from('status_logs').insert(pendingLogs);
 
+            // Optimistically mark content as used IMMEDIATELY (before fire-and-forget).
+            // This prevents race condition: if another schedule triggers 15 min later,
+            // pickContent() will see this content's last_used_at is recent and skip it.
+            await supabase.from('status_contents').update({
+                last_used_at: new Date().toISOString(),
+                use_count: (content.use_count || 0) + 1,
+            }).eq('id', content.id);
+
             // Send batch request (fire-and-forget — bridge responds immediately)
             try {
                 const deviceEntries = connectedDevices.map(d => ({

@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
             // Get the schedule to map session_id -> device_id
             const { data: schedule } = await supabase
                 .from('status_schedules')
-                .select('device_ids, tenant_id')
+                .select('device_ids, device_id, tenant_id')
                 .eq('id', scheduleId)
                 .single();
 
@@ -45,11 +45,15 @@ export async function POST(request: NextRequest) {
                 return NextResponse.json({ error: 'Schedule not found' }, { status: 404 });
             }
 
+            const deviceIdsToFetch = (schedule.device_ids && schedule.device_ids.length > 0)
+                ? schedule.device_ids
+                : (schedule.device_id ? [schedule.device_id] : []);
+
             // Get devices to map session_id -> device
             const { data: devices } = await supabase
                 .from('devices')
                 .select('id, session_id, name')
-                .in('id', schedule.device_ids || []);
+                .in('id', deviceIdsToFetch);
 
             const deviceMap = new Map((devices || []).map(d => [d.session_id, d]));
 
@@ -92,10 +96,9 @@ export async function POST(request: NextRequest) {
                     await supabase.from('status_schedules').update(updates).eq('id', scheduleId);
                 }
 
-                // Update content usage
-                await supabase.from('status_contents').update({
-                    last_used_at: new Date().toISOString(),
-                }).eq('id', contentId);
+                // Note: content last_used_at and use_count are updated optimistically
+                // in POST /api/wa-status/post BEFORE fire-and-forget, so we don't update here
+                // to avoid double-counting.
             }
 
             return NextResponse.json({ success: true, successCount, totalDevices: results.length });
