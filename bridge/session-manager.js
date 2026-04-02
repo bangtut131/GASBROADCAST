@@ -593,36 +593,76 @@ async function throttledAll(tasks, limit) {
     return results;
 }
 
-// ===== Chunked Status Relay: upload media ONCE, relay to contacts in small chunks =====
-// Fixes: Baileys hangs when encrypting for 50+ contacts (Bad MAC session renegotiation)
-// Solution: relay same message to chunks of 10 contacts — each chunk finishes quickly
+// ===== Hybrid Chunked Status Relay =====
+// HYBRID APPROACH: sendMessage to self (registers on phone) + relayMessage chunks (distributes to contacts)
+// - Step 1: sock.sendMessage → sender's own JID only → phone sees "My Status" ✅
+// - Step 2: sock.relayMessage → chunks of CHUNK_SIZE → all other contacts get it ✅
+// - Media uploaded ONCE via sendMessage, reused for relay (no double upload)
 async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
-    // Step 1: Upload media to WA CDN (ONCE)
-    const mediaMsg = await prepareWAMessageMedia(mediaContent, { upload: sock.waUploadToServer });
+    // buildStatusJidList always puts myJid first
+    const myJid = allJids[0];
+    const otherJids = allJids.slice(1);
 
-    // Step 2: Build message content with caption
-    const msgContent = {};
-    if (mediaMsg.imageMessage) {
-        msgContent.imageMessage = { ...mediaMsg.imageMessage };
-        if (mediaContent.caption) msgContent.imageMessage.caption = mediaContent.caption;
-    } else if (mediaMsg.videoMessage) {
-        msgContent.videoMessage = { ...mediaMsg.videoMessage };
-        if (mediaContent.caption) msgContent.videoMessage.caption = mediaContent.caption;
+    let sent = 0;
+    let failed = 0;
+
+    // ── Step 1: sendMessage to sender's own JID ──────────────────────────
+    // This is the HIGH-LEVEL Baileys API that properly triggers WhatsApp's
+    // internal "status posted" protocol, making it visible in "My Status" on the phone.
+    // It also uploads media to WA CDN — we reuse that for relay (no double upload).
+    let sentMsg = null;
+    try {
+        sentMsg = await withTimeout(
+            sock.sendMessage('status@broadcast', mediaContent, {
+                statusJidList: [myJid],
+            }),
+            CHUNK_TIMEOUT,
+            `${sessionId}-self`
+        );
+        sent += 1;
+        console.log(`[${sessionId}] ✅ Status registered on sender device via sendMessage (${myJid})`);
+    } catch (err) {
+        failed += 1;
+        console.error(`[${sessionId}] ⚠️ Failed to register status on sender device: ${err.message}`);
     }
 
-    // Step 3: Generate message proto with unique ID
+    // If no other contacts, we're done
+    if (otherJids.length === 0) {
+        console.log(`[${sessionId}] 📊 Result: ${sent} sent, ${failed} failed out of ${allJids.length}`);
+        return { sent, failed, total: allJids.length };
+    }
+
+    // ── Step 2: Build message content for relay ──────────────────────────
+    // If sendMessage succeeded, reuse its uploaded media (has CDN URLs already).
+    // If it failed, upload fresh via prepareWAMessageMedia as fallback.
+    let msgContent;
+    if (sentMsg?.message) {
+        msgContent = sentMsg.message;
+        console.log(`[${sessionId}] ♻️ Reusing media from sendMessage (no re-upload needed)`);
+    } else {
+        const mediaMsg = await prepareWAMessageMedia(mediaContent, { upload: sock.waUploadToServer });
+        msgContent = {};
+        if (mediaMsg.imageMessage) {
+            msgContent.imageMessage = { ...mediaMsg.imageMessage };
+            if (mediaContent.caption) msgContent.imageMessage.caption = mediaContent.caption;
+        } else if (mediaMsg.videoMessage) {
+            msgContent.videoMessage = { ...mediaMsg.videoMessage };
+            if (mediaContent.caption) msgContent.videoMessage.caption = mediaContent.caption;
+        }
+        console.log(`[${sessionId}] 📤 Fresh media upload to CDN (sendMessage fallback)`);
+    }
+
+    // ── Step 3: Generate message proto for relay ─────────────────────────
     const msg = generateWAMessageFromContent('status@broadcast', msgContent, {
         userJid: sock.user.id,
     });
 
-    const totalChunks = Math.ceil(allJids.length / CHUNK_SIZE);
-    console.log(`[${sessionId}] 📤 Media uploaded to CDN, relaying to ${allJids.length} contacts in ${totalChunks} chunks of ${CHUNK_SIZE}...`);
+    const totalChunks = Math.ceil(otherJids.length / CHUNK_SIZE);
+    console.log(`[${sessionId}] 📤 Relaying to ${otherJids.length} other contacts in ${totalChunks} chunks of ${CHUNK_SIZE}...`);
 
-    // Step 4: Relay in chunks
-    let sent = 0;
-    let failed = 0;
-    for (let i = 0; i < allJids.length; i += CHUNK_SIZE) {
-        const chunk = allJids.slice(i, i + CHUNK_SIZE);
+    // ── Step 4: Relay in chunks (low-level, fast, no timeout) ────────────
+    for (let i = 0; i < otherJids.length; i += CHUNK_SIZE) {
+        const chunk = otherJids.slice(i, i + CHUNK_SIZE);
         const chunkNum = Math.floor(i / CHUNK_SIZE) + 1;
         try {
             await withTimeout(
@@ -640,7 +680,7 @@ async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
             console.error(`[${sessionId}] ⚠️ Chunk ${chunkNum}/${totalChunks} failed: ${err.message} (${chunk.length} skipped)`);
         }
         // Delay between chunks to avoid overwhelming WA server
-        if (i + CHUNK_SIZE < allJids.length) {
+        if (i + CHUNK_SIZE < otherJids.length) {
             await new Promise(r => setTimeout(r, CHUNK_DELAY));
         }
     }
