@@ -281,7 +281,8 @@ export async function createSession(sessionId) {
 
         if (type !== 'notify') return;
         for (const msg of messages) {
-            if (msg.key.fromMe) continue;
+            // Do NOT continue if fromMe; we want to capture manual replies from the device as well.
+            const isFromMe = msg.key.fromMe;
             const from = msg.key.remoteJid;
             if (!from || from.endsWith('@g.us') || from === 'status@broadcast') continue;
 
@@ -343,7 +344,8 @@ export async function createSession(sessionId) {
                 .replace('@lid', '')
                 .trim();
 
-            console.log(`[${sessionId}] 📨 Message from ${phone} (raw: ${from}): "${body.substring(0, 60)}" type=${type}`);
+            const direction = isFromMe ? 'outbound' : 'inbound';
+            console.log(`[${sessionId}] 📨 ${direction} Message with ${phone} (raw: ${from}): "${body.substring(0, 60)}" type=${type}`);
 
             // Download media if present
             let mediaUrl = null;
@@ -377,6 +379,7 @@ export async function createSession(sessionId) {
                     type: msgType,
                     timestamp: msg.messageTimestamp,
                     mediaUrl,
+                    direction, // <--- Add direction mapping
                 },
             });
         }
@@ -542,8 +545,8 @@ export async function sendStatusVideo(sessionId, videoUrl, caption = '', contact
 // Max concurrent device sends (1 = serial, prevents bandwidth/CPU saturation)
 const MAX_CONCURRENT_SENDS = 1;
 // Chunked relay: send to contacts in small batches to avoid Baileys encryption timeout
-const CHUNK_SIZE = 10;         // 10 contacts per relay — even with Bad MAC, completes in <30s
-const CHUNK_TIMEOUT = 30_000;  // 30 seconds per chunk
+const CHUNK_SIZE = 10;         // 10 contacts per relay
+const CHUNK_TIMEOUT = 30_000;  // 30 seconds timeout per chunk
 const CHUNK_DELAY = 2000;      // 2 seconds between chunks
 
 async function downloadMedia(url) {

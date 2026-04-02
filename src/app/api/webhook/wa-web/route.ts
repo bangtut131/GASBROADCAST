@@ -215,13 +215,16 @@ export async function POST(request: NextRequest) {
                 }
             }
 
+            // Safely get direction from payload or fallback to 'inbound'
+            const msgDirection = payload.direction || 'inbound';
+
             // Save message
             const { error: msgError } = await supabase.from('messages').insert({
                 tenant_id: device.tenant_id,
                 device_id: device.id,
                 contact_id: contactId,
                 phone,
-                direction: 'inbound',
+                direction: msgDirection,
                 content: messageBody,
                 media_url: resolvedMediaUrl,
                 message_type: payload.type || 'text',
@@ -231,19 +234,22 @@ export async function POST(request: NextRequest) {
             if (msgError) {
                 console.error('[Webhook wa-web] Message insert error:', msgError.message);
             } else {
-                console.log(`[Webhook wa-web] ✅ Message saved from ${phone}: "${payload.body?.substring(0, 50) || '[Media]'}"`);
+                console.log(`[Webhook wa-web] ✅ Message saved from ${phone} (direction: ${msgDirection}): "${payload.body?.substring(0, 50) || '[Media]'}"`);
                 
                 // --- Generate Incoming Message Notification ---
-                try {
-                    await supabase.from('notifications').insert({
-                        tenant_id: device.tenant_id,
-                        device_id: device.id,
-                        title: `Pesan Baru dari ${phone}`,
-                        message: payload.body ? (payload.body.substring(0, 60) + (payload.body.length > 60 ? '...' : '')) : '[Media]',
-                        type: 'incoming_message'
-                    });
-                } catch (notifErr: any) {
-                    console.error('[Webhook wa-web] Failed to generate notification:', notifErr.message);
+                // Only generate if it's an inbound message
+                if (msgDirection === 'inbound') {
+                    try {
+                        await supabase.from('notifications').insert({
+                            tenant_id: device.tenant_id,
+                            device_id: device.id,
+                            title: `Pesan Baru dari ${phone}`,
+                            message: payload.body ? (payload.body.substring(0, 60) + (payload.body.length > 60 ? '...' : '')) : '[Media]',
+                            type: 'incoming_message'
+                        });
+                    } catch (notifErr: any) {
+                        console.error('[Webhook wa-web] Failed to generate notification:', notifErr.message);
+                    }
                 }
             }
 
