@@ -153,9 +153,10 @@ export async function POST(request: NextRequest) {
                 return NextResponse.json({ success: true, skipped: 'empty_outbound' });
             }
 
-            // [DEBUG] If it is an inbound message and we STILL couldn't find ANY text or media, dump the raw payload!
-            if (msgDirection === 'inbound' && !messageBody && !payload.mediaUrl && !payload.media_url) {
-                messageBody = "[DEBUG] " + JSON.stringify(payload);
+            // Skip phantom inbound messages (bugs from the Baileys bridge that emit type: "text" but body is "")
+            if (!messageBody && !payload.mediaUrl && !payload.media_url) {
+                console.log(`[Webhook wa-web] ⏭️ Skipping phantom empty payload from ${payload.from}`);
+                return NextResponse.json({ success: true, skipped: 'phantom_payload' });
             }
 
             const device = await findDevice(sessionId);
