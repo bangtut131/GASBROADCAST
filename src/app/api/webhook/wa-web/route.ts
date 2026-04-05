@@ -144,13 +144,18 @@ export async function POST(request: NextRequest) {
             
             // Clean up potentially weird text structures
             if (messageBody === '[object Object]') messageBody = '';
-            
+
             const msgDirection = payload.direction || 'inbound';
             
             // Skip useless outbound echo from the bridge that has no content
             if (msgDirection === 'outbound' && !messageBody && !payload.mediaUrl && !payload.media_url) {
                 console.log(`[Webhook wa-web] ⏭️ Skipping empty outbound echo from ${payload.from}`);
                 return NextResponse.json({ success: true, skipped: 'empty_outbound' });
+            }
+
+            // [DEBUG] If it is an inbound message and we STILL couldn't find ANY text or media, dump the raw payload!
+            if (msgDirection === 'inbound' && !messageBody && !payload.mediaUrl && !payload.media_url) {
+                messageBody = "[DEBUG] " + JSON.stringify(payload);
             }
 
             const device = await findDevice(sessionId);
