@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
+import { WAHAProvider } from '@/lib/wa-provider/waha';
+import { createAIProvider, AIMessage } from '@/lib/ai-provider';
+import { formatPhone } from '@/lib/wa-provider';
 
 /**
  * Webhook handler for GAS Smart Broadcast Baileys Bridge (wa-web provider)
@@ -37,7 +40,7 @@ export async function POST(request: NextRequest) {
             // Strategy 1: exact session_id match
             const { data: bySession } = await supabase
                 .from('devices')
-                .select('id, tenant_id, session_id, phone_number, provider')
+                .select('id, tenant_id, session_id, phone_number, provider, name, provider_config')
                 .eq('session_id', sid)
                 .maybeSingle();
             if (bySession) {
@@ -50,7 +53,7 @@ export async function POST(request: NextRequest) {
                 const cleaned = phoneNumber.replace(/\D/g, '');
                 const { data: byPhone } = await supabase
                     .from('devices')
-                    .select('id, tenant_id, session_id, phone_number, provider')
+                    .select('id, tenant_id, session_id, phone_number, provider, name, provider_config')
                     .eq('phone_number', cleaned)
                     .maybeSingle();
                 if (byPhone) {
@@ -68,7 +71,7 @@ export async function POST(request: NextRequest) {
                 console.log(`[Webhook wa-web] Trying tenant prefix lookup: tenant_id LIKE '${tenantPrefix}%'`);
                 const { data: byTenant } = await supabase
                     .from('devices')
-                    .select('id, tenant_id, session_id, phone_number, provider')
+                    .select('id, tenant_id, session_id, phone_number, provider, name, provider_config')
                     .ilike('tenant_id', `${tenantPrefix}%`)
                     .order('created_at', { ascending: false })
                     .limit(1);
@@ -135,7 +138,8 @@ export async function POST(request: NextRequest) {
             }
 
             // Use body or fallback to [Media] so messages are always saved
-            const messageBody = payload.body || '[Media]';
+            const messageBody = payload.body || '';
+            const msgDirection = payload.direction || 'inbound';
 
             const device = await findDevice(sessionId);
             if (!device) {
@@ -148,29 +152,33 @@ export async function POST(request: NextRequest) {
             // Clean phone number (handle WhatsApp JID extensions like 62812...:15@s.whatsapp.net)
             let rawPhone = payload.from;
             if (rawPhone && rawPhone.includes(':')) {
-                // Split by colon and take the first part, then append the domain
                 rawPhone = rawPhone.split(':')[0] + '@s.whatsapp.net';
             }
             const phone = rawPhone.replace(/\D/g, '') || rawPhone;
 
-            // Get or create contact safely without wiping existing name
-            let contactId = null;
+            // Get or create contact safely — fetch tags for auto-reply filtering
+            let contactId: string | null = null;
+            let contactTags: string[] = [];
             const { data: existingContact } = await supabase
                 .from('contacts')
-                .select('id')
+                .select('id, tags')
                 .eq('tenant_id', device.tenant_id)
                 .eq('phone', phone)
                 .maybeSingle();
 
             if (existingContact) {
                 contactId = existingContact.id;
+                contactTags = existingContact.tags || [];
             } else {
                 const { data: newContact } = await supabase
                     .from('contacts')
                     .insert({ tenant_id: device.tenant_id, phone })
-                    .select('id')
+                    .select('id, tags')
                     .maybeSingle();
-                if (newContact) contactId = newContact.id;
+                if (newContact) {
+                    contactId = newContact.id;
+                    contactTags = newContact.tags || [];
+                }
             }
 
             // Handle media: upload base64 data URL to Supabase Storage
@@ -215,9 +223,6 @@ export async function POST(request: NextRequest) {
                 }
             }
 
-            // Safely get direction from payload or fallback to 'inbound'
-            const msgDirection = payload.direction || 'inbound';
-
             // Save message
             const { error: msgError } = await supabase.from('messages').insert({
                 tenant_id: device.tenant_id,
@@ -225,7 +230,7 @@ export async function POST(request: NextRequest) {
                 contact_id: contactId,
                 phone,
                 direction: msgDirection,
-                content: messageBody,
+                content: messageBody || '[Media]',
                 media_url: resolvedMediaUrl,
                 message_type: payload.type || 'text',
                 wa_message_id: payload.id || null,
@@ -234,17 +239,16 @@ export async function POST(request: NextRequest) {
             if (msgError) {
                 console.error('[Webhook wa-web] Message insert error:', msgError.message);
             } else {
-                console.log(`[Webhook wa-web] ✅ Message saved from ${phone} (direction: ${msgDirection}): "${payload.body?.substring(0, 50) || '[Media]'}"`);
+                console.log(`[Webhook wa-web] ✅ Message saved from ${phone} (direction: ${msgDirection}): "${messageBody?.substring(0, 50) || '[Media]'}"`);
                 
                 // --- Generate Incoming Message Notification ---
-                // Only generate if it's an inbound message
                 if (msgDirection === 'inbound') {
                     try {
                         await supabase.from('notifications').insert({
                             tenant_id: device.tenant_id,
                             device_id: device.id,
                             title: `Pesan Baru dari ${phone}`,
-                            message: payload.body ? (payload.body.substring(0, 60) + (payload.body.length > 60 ? '...' : '')) : '[Media]',
+                            message: messageBody ? (messageBody.substring(0, 60) + (messageBody.length > 60 ? '...' : '')) : '[Media]',
                             type: 'incoming_message'
                         });
                     } catch (notifErr: any) {
@@ -253,7 +257,239 @@ export async function POST(request: NextRequest) {
                 }
             }
 
-            return NextResponse.json({ success: true });
+            // ==================================================================
+            // AUTO-REPLY ENGINE — only for inbound messages with content
+            // ==================================================================
+            if (msgDirection !== 'inbound') {
+                console.log(`[AutoReply] Skipping outbound message from ${phone}`);
+                return NextResponse.json({ success: true });
+            }
+
+            const message = (messageBody || '').toLowerCase().trim();
+            console.log(`[AutoReply] Phone: ${phone}, Message: "${message}", Device: ${device.name} (${device.id})`);
+
+            // Skip status messages
+            const isStatus = payload.from === 'status@broadcast';
+            if (isStatus) {
+                return NextResponse.json({ success: true });
+            }
+
+            // 1. Intercept Unsubscribe Request
+            if (message === 'unsub' || message === 'unsubscribe') {
+                await supabase.from('blacklisted_contacts').upsert(
+                    { tenant_id: device.tenant_id, phone, reason: 'unsubscribed via auto-reply keyword' },
+                    { onConflict: 'tenant_id,phone' }
+                );
+                const replyText = 'Pesan diterima. Nomor Anda telah berhasil dihapus dari daftar. Anda tidak akan menerima rentetan pesan promosi dari kami lagi.';
+                const wahaProvider = new WAHAProvider(device.provider_config as { apiUrl?: string; apiKey?: string });
+                await wahaProvider.sendText(device.session_id, phone, replyText);
+                return NextResponse.json({ success: true, unsubscribed: true });
+            }
+
+            // 2. Check auto-reply rules (ordered by priority desc)
+            const { data: rules, error: rulesErr } = await supabase
+                .from('autoreply_rules')
+                .select('*')
+                .eq('tenant_id', device.tenant_id)
+                .eq('is_active', true)
+                .or(`device_id.eq.${device.id},device_id.is.null`)
+                .order('priority', { ascending: false });
+
+            console.log(`[AutoReply] Rules found: ${rules?.length || 0}, Query error: ${rulesErr?.message || 'none'}`);
+
+            if (!rules || rules.length === 0) {
+                console.log('[AutoReply] No active rules found — skipping');
+                return NextResponse.json({ success: true });
+            }
+
+            // Pre-fetch contact group memberships for filtering
+            let contactGroupIds: string[] = [];
+            if (contactId) {
+                const { data: memberships } = await supabase
+                    .from('contact_group_members')
+                    .select('group_id')
+                    .eq('contact_id', contactId);
+                contactGroupIds = (memberships || []).map(m => m.group_id);
+            }
+
+            // Check blacklist status
+            const { data: blacklisted } = await supabase
+                .from('blacklisted_contacts')
+                .select('id')
+                .eq('tenant_id', device.tenant_id)
+                .eq('phone', phone)
+                .maybeSingle();
+            const isBlacklisted = !!blacklisted;
+            if (isBlacklisted) console.log(`[AutoReply] Phone ${phone} is BLACKLISTED — all rules skipped`);
+
+            let matchedRule: typeof rules[0] | null = null;
+
+            for (const rule of rules) {
+                console.log(`[AutoReply] Checking rule: "${rule.name}" (type: ${rule.trigger_type}, priority: ${rule.priority})`);
+
+                // a. Exclude: skip if sender is blacklisted
+                if (isBlacklisted) { console.log(`[AutoReply]   → SKIP: blacklisted`); continue; }
+
+                // b. Exclude phones
+                const exPhones: string[] = rule.exclude_phones || [];
+                if (exPhones.length > 0 && exPhones.some((ep: string) => phone.includes(ep.replace(/\D/g, '')))) { console.log(`[AutoReply]   → SKIP: exclude_phones`); continue; }
+
+                // c. Exclude tags
+                const exTags: string[] = rule.exclude_tags || [];
+                if (exTags.length > 0 && exTags.some((et: string) => contactTags.includes(et))) { console.log(`[AutoReply]   → SKIP: exclude_tags`); continue; }
+
+                // d. Target tags/groups (AND logic)
+                const tTags: string[] = rule.target_tags || [];
+                const tGroups: string[] = rule.target_group_ids || [];
+                const hasTagFilter = tTags.length > 0;
+                const hasGroupFilter = tGroups.length > 0;
+                if (hasTagFilter || hasGroupFilter) {
+                    const tagOk = !hasTagFilter || tTags.some((t: string) => contactTags.includes(t));
+                    const groupOk = !hasGroupFilter || tGroups.some((g: string) => contactGroupIds.includes(g));
+                    if (!tagOk || !groupOk) { console.log(`[AutoReply]   → SKIP: target filter`); continue; }
+                }
+
+                // --- Trigger matching ---
+                if (rule.trigger_type === 'ai') {
+                    console.log(`[AutoReply]   → MATCH: AI trigger (matches all messages)`);
+                    matchedRule = rule;
+                    break;
+                }
+
+                const trigger = (rule.trigger_value || '').toLowerCase();
+                if (!trigger && rule.trigger_type !== 'ai') { console.log(`[AutoReply]   → SKIP: empty trigger`); continue; }
+
+                if (rule.trigger_type === 'keyword') {
+                    const keywords = trigger.split(',').map((k: string) => k.trim()).filter(Boolean);
+                    if (keywords.some((kw: string) => message === kw)) { console.log(`[AutoReply]   → MATCH: keyword`); matchedRule = rule; break; }
+                } else if (rule.trigger_type === 'contains') {
+                    if (message.includes(trigger)) { console.log(`[AutoReply]   → MATCH: contains`); matchedRule = rule; break; }
+                } else if (rule.trigger_type === 'regex') {
+                    try {
+                        if (new RegExp(trigger, 'i').test(message)) { console.log(`[AutoReply]   → MATCH: regex`); matchedRule = rule; break; }
+                    } catch { }
+                }
+                console.log(`[AutoReply]   → NO MATCH`);
+            }
+
+            if (!matchedRule) {
+                console.log('[AutoReply] No rule matched — no reply');
+                return NextResponse.json({ success: true });
+            }
+
+            console.log(`[AutoReply] ✅ Matched rule: "${matchedRule.name}" → executing ${matchedRule.trigger_type} reply`);
+            let replyText = '';
+
+            if (matchedRule.trigger_type === 'ai') {
+                // === AI Reply ===
+                try {
+                    // Load knowledge base (gracefully handles missing table)
+                    let knowledgeFiles: { title: string; category: string; content: string }[] = [];
+                    try {
+                        const { data: kbData } = await supabase
+                            .from('ai_knowledge_files')
+                            .select('title, category, content')
+                            .eq('rule_id', matchedRule.id)
+                            .eq('is_active', true)
+                            .order('category').order('title');
+                        knowledgeFiles = kbData || [];
+                    } catch {
+                        console.log('[AutoReply] ai_knowledge_files table not available');
+                    }
+
+                    // Build enhanced system prompt
+                    let fullSystemPrompt = matchedRule.ai_system_prompt || '';
+                    if (knowledgeFiles.length > 0) {
+                        const categoryLabels: Record<string, string> = {
+                            product: '📦 Product Knowledge', company: '🏢 Company Info',
+                            faq: '❓ FAQ', policy: '📋 Policy & Rules', general: '📄 General',
+                        };
+                        const knowledgeText = knowledgeFiles
+                            .map(f => `### ${categoryLabels[f.category] || f.category} — ${f.title}\n${f.content}`)
+                            .join('\n\n');
+                        fullSystemPrompt += `\n\n=== KNOWLEDGE BASE ===\nGunakan informasi di bawah ini sebagai referensi utama.\n\n${knowledgeText}`;
+                    }
+
+                    const aiProvider = createAIProvider({
+                        ai_base_url: matchedRule.ai_base_url,
+                        ai_api_key: matchedRule.ai_api_key,
+                        ai_model: matchedRule.ai_model,
+                        ai_system_prompt: fullSystemPrompt,
+                        ai_temperature: matchedRule.ai_temperature,
+                        ai_max_tokens: matchedRule.ai_max_tokens,
+                    });
+
+                    const contextTurns = matchedRule.ai_context_turns || 5;
+
+                    // Load conversation history
+                    const { data: convRecord } = await supabase
+                        .from('ai_conversations')
+                        .select('messages')
+                        .eq('tenant_id', device.tenant_id)
+                        .eq('phone', phone)
+                        .eq('device_id', device.id)
+                        .single();
+
+                    const history: AIMessage[] = (convRecord?.messages || []).slice(-(contextTurns * 2));
+
+                    // Get AI reply
+                    const userMessage = messageBody || '[Pengguna mengirim media tanpa teks]';
+                    const aiResponse = await aiProvider.conversate(history, userMessage);
+                    replyText = aiResponse.content;
+                    console.log(`[AutoReply] AI response (${replyText.length} chars): "${replyText.substring(0, 100)}..."`);
+
+                    // Update conversation history
+                    const newHistory: AIMessage[] = [
+                        ...history,
+                        { role: 'user', content: userMessage },
+                        { role: 'assistant', content: replyText },
+                    ];
+
+                    await supabase.from('ai_conversations').upsert(
+                        {
+                            tenant_id: device.tenant_id, phone, device_id: device.id,
+                            rule_id: matchedRule.id,
+                            messages: newHistory.slice(-contextTurns * 2),
+                            last_message_at: new Date().toISOString(),
+                        },
+                        { onConflict: 'tenant_id,phone,device_id' }
+                    );
+                } catch (aiErr: any) {
+                    console.error('[AutoReply] ❌ AI reply error:', aiErr.message, aiErr.stack);
+                    return NextResponse.json({ success: true, error: 'AI reply failed: ' + aiErr.message });
+                }
+            } else {
+                replyText = matchedRule.response_text;
+            }
+
+            if (!replyText) {
+                console.log('[AutoReply] Empty reply text — not sending');
+                return NextResponse.json({ success: true });
+            }
+
+            // Send reply via WAHA
+            console.log(`[AutoReply] Sending reply to ${phone} via wa-web (${replyText.length} chars)`);
+            const wahaProvider = new WAHAProvider(device.provider_config as { apiUrl?: string; apiKey?: string });
+            const sendResult = await wahaProvider.sendText(device.session_id, phone, replyText);
+
+            if (sendResult.success) {
+                // Log outbound reply
+                await supabase.from('messages').insert({
+                    tenant_id: device.tenant_id,
+                    device_id: device.id,
+                    contact_id: contactId,
+                    phone,
+                    direction: 'outbound',
+                    content: replyText,
+                    message_type: 'text',
+                    wa_message_id: sendResult.messageId || null,
+                });
+                console.log(`[AutoReply] ✅ Reply sent successfully to ${phone}`);
+            } else {
+                console.error(`[AutoReply] ❌ Failed to send reply: ${sendResult.error}`);
+            }
+
+            return NextResponse.json({ success: true, autoReply: !!matchedRule });
         }
 
         return NextResponse.json({ success: true });
