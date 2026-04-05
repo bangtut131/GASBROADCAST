@@ -286,21 +286,6 @@ export async function createSession(sessionId) {
             const from = msg.key.remoteJid;
             if (!from || from.endsWith('@g.us') || from === 'status@broadcast') continue;
 
-            // Dedup: skip if already processed
-            const msgId = msg.key.id;
-            if (processedMsgIds.has(msgId)) {
-                console.log(`[${sessionId}] ⏭️ Skipping duplicate message ${msgId}`);
-                continue;
-            }
-            processedMsgIds.add(msgId);
-            // Keep set from growing unbounded
-            if (processedMsgIds.size > DEDUP_MAX) {
-                const first = processedMsgIds.values().next().value;
-                processedMsgIds.delete(first);
-            }
-
-            // Allow @lid (Linked Device IDs) because Multi-Device uses this for subsequent messages
-
             // Extract body — handle all known message types including nested wrappers
             const m = msg.message;
             const body =
@@ -317,6 +302,30 @@ export async function createSession(sessionId) {
                 m?.listResponseMessage?.title ||
                 m?.templateButtonReplyMessage?.selectedDisplayText ||
                 '';
+
+            // Filter out undecrypted stubs and protocol messages! 
+            // If we dedup these, the actual decrypted retry (sent 10-15s later) will be falsely rejected as duplicate!
+            const isStub = !m || (!body && !msg.message?.imageMessage && !msg.message?.videoMessage && !msg.message?.audioMessage && !msg.message?.documentMessage && !msg.message?.stickerMessage);
+            
+            if (isStub) {
+                console.log(`[${sessionId}] ⏭️ Skipping stub/undecrypted/empty message ${msg.key.id}`);
+                continue;
+            }
+
+            // Dedup: skip if already processed
+            const msgId = msg.key.id;
+            if (processedMsgIds.has(msgId)) {
+                console.log(`[${sessionId}] ⏭️ Skipping duplicate message ${msgId}`);
+                continue;
+            }
+            processedMsgIds.add(msgId);
+            // Keep set from growing unbounded
+            if (processedMsgIds.size > DEDUP_MAX) {
+                const first = processedMsgIds.values().next().value;
+                processedMsgIds.delete(first);
+            }
+
+            // Allow @lid (Linked Device IDs) because Multi-Device uses this for subsequent messages
 
             // Clean phone number
             let fromJid = from;
