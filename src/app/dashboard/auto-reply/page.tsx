@@ -66,12 +66,48 @@ const KB_CATEGORIES = [
 interface DeviceOption { id: string; name: string; phone_number: string | null; status: string; }
 interface GroupOption { id: string; name: string; member_count: number; }
 
+const DEFAULT_SYSTEM_PROMPT = `=== IDENTITAS ===
+Kamu adalah "[NAMA AGENT]", Customer Service AI dari [NAMA BISNIS].
+Kamu membantu customer menjawab pertanyaan seputar produk, layanan, harga, dan informasi bisnis melalui WhatsApp.
+
+=== GAYA BAHASA ===
+- Gunakan bahasa Indonesia yang sopan, ramah, dan profesional
+- Sapa customer dengan "Kak" di awal percakapan
+- Gunakan emoji secukupnya (1-2 per pesan)
+- Jawab SINGKAT dan TO THE POINT, maksimal 3-4 kalimat per pesan
+- Jangan gunakan markdown atau bullet list (ini WhatsApp biasa)
+
+=== SCOPE / CAKUPAN ===
+Kamu HANYA boleh menjawab pertanyaan terkait:
+✅ Informasi produk (nama, spesifikasi, harga, stok)
+✅ Cara pemesanan dan pembayaran
+✅ Estimasi pengiriman
+✅ Kebijakan retur, garansi, dan komplain
+✅ Promo yang sedang berlaku
+✅ Info umum tentang bisnis (alamat, jam kerja)
+
+=== GUARDRAILS / LARANGAN ===
+🚫 JANGAN pernah menjawab pertanyaan di luar topik bisnis (politik, agama, gosip, dll)
+🚫 JANGAN memberikan informasi yang TIDAK ADA di Knowledge Base — jika tidak tahu, arahkan ke CS manusia
+🚫 JANGAN menjanjikan diskon/promo yang tidak ada di Knowledge Base
+🚫 JANGAN memberikan data internal perusahaan
+🚫 JANGAN merespons pesan spam, kasar, atau tidak pantas
+🚫 JANGAN membuat keputusan retur/refund sendiri — selalu eskalasi ke CS manusia
+
+=== ESKALASI ===
+Jika menemukan situasi yang tidak bisa dijawab, ARAHKAN ke CS manusia:
+"Untuk hal ini, saya hubungkan Kakak dengan tim CS kami ya. Silakan hubungi [NOMOR CS] atau tunggu sebentar, tim kami akan segera merespons 🙏"
+
+=== PEMBUKA ===
+Jika customer mengirim sapaan (halo, hai, hi):
+"Halo Kak! 👋 Selamat datang di [NAMA BISNIS]. Ada yang bisa saya bantu hari ini?"`;
+
 const defaultForm = {
     name: '', trigger_type: 'keyword', trigger_value: '',
     response_text: '', priority: 0,
     device_id: '',
     ai_preset: 'sumopod', ai_base_url: 'https://api.sumopod.com/v1',
-    ai_api_key: '', ai_model: '', ai_system_prompt: '', ai_temperature: 0.7,
+    ai_api_key: '', ai_model: '', ai_system_prompt: DEFAULT_SYSTEM_PROMPT, ai_temperature: 0.7,
     ai_max_tokens: 512, ai_context_turns: 5,
     // Filters
     target_tags: [] as string[],
@@ -643,8 +679,8 @@ export default function AutoReplyPage() {
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">System Prompt / Guardrails</label>
-                                    <textarea className="form-textarea" rows={3} placeholder="Kamu adalah CS toko XYZ. Jawab HANYA berdasarkan Knowledge Base yang tersedia. Jika tidak tahu jawabannya, minta customer menghubungi CS di 08xxx. Jawab singkat dan sopan dalam bahasa Indonesia. Jangan jawab pertanyaan di luar topik bisnis." value={form.ai_system_prompt} onChange={e => setForm(f => ({ ...f, ai_system_prompt: e.target.value }))} />
-                                    <span className="form-hint">Tulis instruksi & guardrails untuk AI agent. Knowledge Base (produk, perusahaan, FAQ) bisa ditambahkan setelah rule disimpan.</span>
+                                    <textarea className="form-textarea" rows={12} placeholder="Instruksi dan batasan untuk AI agent..." value={form.ai_system_prompt} onChange={e => setForm(f => ({ ...f, ai_system_prompt: e.target.value }))} style={{ fontFamily: 'monospace', fontSize: 12, lineHeight: 1.5 }} />
+                                    <span className="form-hint">Edit template di atas — ganti bagian [DALAM KURUNG] dengan data bisnis Anda. Knowledge Base (produk, perusahaan, FAQ) ditambahkan terpisah setelah rule disimpan.</span>
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Temperature ({form.ai_temperature})</label>
