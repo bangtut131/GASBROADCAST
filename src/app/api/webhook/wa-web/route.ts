@@ -497,6 +497,44 @@ export async function POST(request: NextRequest) {
                 return NextResponse.json({ success: true });
             }
 
+            // Auto-tagging logic: Extract [TAG: <name>] or [CLOSING_DEAL] from AI payload
+            let tagsToAdd: string[] = [];
+            const tagRegex = /\[TAG:\s*([^\]]+)\]/gi;
+            let filteredReplyText = replyText.replace(tagRegex, (match, tagRaw) => {
+                const tag = tagRaw.trim();
+                if (tag) tagsToAdd.push(tag);
+                return '';
+            });
+            
+            // Allow basic [CLOSING_DEAL] as a hardcoded tag for simplicity
+            const closingRegex = /\[CLOSING(?:_DEAL)?\]/gi;
+            if (closingRegex.test(filteredReplyText)) {
+                tagsToAdd.push('CLOSING_DEAL');
+                filteredReplyText = filteredReplyText.replace(closingRegex, '');
+            }
+
+            replyText = filteredReplyText.trim();
+
+            if (tagsToAdd.length > 0 && contactId) {
+                const uniqueNewTags = [...new Set(tagsToAdd.map(t => t.toUpperCase()))];
+                const updatedTags = [...new Set([...contactTags, ...uniqueNewTags])];
+                
+                await supabase.from('contacts').update({ tags: updatedTags }).eq('id', contactId);
+                console.log(`[AutoReply] 🏷️ Auto-tagged contact ${phone} with:`, uniqueNewTags);
+
+                // Add to dashboard notifications
+                await supabase.from('notifications').insert({
+                    tenant_id: device.tenant_id,
+                    device_id: device.id,
+                    title: `🎯 AI Auto-Tagging`,
+                    message: `AI berhasil memberi label baru [${uniqueNewTags.join(', ')}] pada prospek ${phone}`,
+                    type: 'info',
+                    is_read: false
+                }).then(({ error }) => {
+                    if (error) console.error("[AutoReply] Notification err:", error);
+                });
+            }
+
             // Send reply via WAHA
             console.log(`[AutoReply] Sending reply to ${phone} via wa-web (${replyText.length} chars)`);
             const wahaProvider = new WAHAProvider(device.provider_config as { apiUrl?: string; apiKey?: string });
