@@ -88,24 +88,29 @@ export async function POST(
 
             if (!device) return NextResponse.json({ received: true, error: 'Device not found' });
 
-            // Get or create contact safely without wiping existing name
-            let contactId = null;
+            // Get or create contact safely — fetch tags for auto-reply filtering
+            let contactId: string | null = null;
+            let contactTags: string[] = [];
             const { data: existingContact } = await supabase
                 .from('contacts')
-                .select('id')
+                .select('id, tags')
                 .eq('tenant_id', device.tenant_id)
                 .eq('phone', phone)
                 .maybeSingle();
 
             if (existingContact) {
                 contactId = existingContact.id;
+                contactTags = existingContact.tags || [];
             } else {
                 const { data: newContact } = await supabase
                     .from('contacts')
                     .insert({ tenant_id: device.tenant_id, phone })
-                    .select('id')
+                    .select('id, tags')
                     .maybeSingle();
-                if (newContact) contactId = newContact.id;
+                if (newContact) {
+                    contactId = newContact.id;
+                    contactTags = newContact.tags || [];
+                }
             }
 
             // Save inbound message
@@ -174,9 +179,55 @@ export async function POST(
                 return NextResponse.json({ received: true });
             }
 
+            // Pre-fetch contact group memberships for filtering
+            let contactGroupIds: string[] = [];
+            if (contactId) {
+                const { data: memberships } = await supabase
+                    .from('contact_group_members')
+                    .select('group_id')
+                    .eq('contact_id', contactId);
+                contactGroupIds = (memberships || []).map(m => m.group_id);
+            }
+
+            // Check blacklist status
+            const { data: blacklisted } = await supabase
+                .from('blacklisted_contacts')
+                .select('id')
+                .eq('tenant_id', device.tenant_id)
+                .eq('phone', phone)
+                .maybeSingle();
+            const isBlacklisted = !!blacklisted;
+
             let matchedRule: typeof rules[0] | null = null;
 
             for (const rule of rules) {
+                // --- Advanced filter checks ---
+
+                // a. Exclude: skip if sender is blacklisted
+                if (isBlacklisted) continue;
+
+                // b. Exclude phones: skip if sender in exclude list
+                const exPhones: string[] = rule.exclude_phones || [];
+                if (exPhones.length > 0 && exPhones.some(ep => phone.includes(ep.replace(/\D/g, '')))) continue;
+
+                // c. Exclude tags: skip if sender has any excluded tag
+                const exTags: string[] = rule.exclude_tags || [];
+                if (exTags.length > 0 && exTags.some(et => contactTags.includes(et))) continue;
+
+                // d. Target tags: skip if set but sender has NONE of the target tags (AND with groups)
+                const tTags: string[] = rule.target_tags || [];
+                const tGroups: string[] = rule.target_group_ids || [];
+                const hasTagFilter = tTags.length > 0;
+                const hasGroupFilter = tGroups.length > 0;
+
+                if (hasTagFilter || hasGroupFilter) {
+                    // AND logic: ALL specified filters must match
+                    const tagOk = !hasTagFilter || tTags.some(t => contactTags.includes(t));
+                    const groupOk = !hasGroupFilter || tGroups.some(g => contactGroupIds.includes(g));
+                    if (!tagOk || !groupOk) continue;
+                }
+
+                // --- Trigger matching ---
                 if (rule.trigger_type === 'ai') {
                     matchedRule = rule; // AI rules match all messages
                     break;
@@ -186,7 +237,6 @@ export async function POST(
                 if (!trigger && rule.trigger_type !== 'ai') continue;
 
                 if (rule.trigger_type === 'keyword') {
-                    // Multiple keywords separated by comma
                     const keywords = trigger.split(',').map((k: string) => k.trim()).filter(Boolean);
                     if (keywords.some((kw: string) => message === kw)) { matchedRule = rule; break; }
                 } else if (rule.trigger_type === 'contains') {

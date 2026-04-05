@@ -134,6 +134,11 @@ export interface AutoReplyRule {
   response_media_url: string | null;
   is_active: boolean;
   priority: number;
+  // Advanced filters
+  target_tags: string[];
+  target_group_ids: string[];
+  exclude_tags: string[];
+  exclude_phones: string[];
   created_at: string;
 }
 

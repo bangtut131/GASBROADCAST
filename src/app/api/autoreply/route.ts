@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
 
         const { data, error } = await supabase
             .from('autoreply_rules')
-            .select('id, name, trigger_type, trigger_value, response_text, is_active, priority, ai_model, ai_base_url, ai_system_prompt, created_at')
+            .select('id, name, trigger_type, trigger_value, response_text, is_active, priority, device_id, ai_model, ai_base_url, ai_system_prompt, target_tags, target_group_ids, exclude_tags, exclude_phones, created_at')
             .order('priority', { ascending: false });
 
         if (error) throw error;
@@ -41,6 +41,8 @@ export async function POST(request: NextRequest) {
             // AI fields
             ai_base_url, ai_api_key, ai_model, ai_system_prompt,
             ai_temperature, ai_max_tokens, ai_context_turns,
+            // Advanced filters
+            target_tags, target_group_ids, exclude_tags, exclude_phones,
         } = body;
 
         if (!name) return NextResponse.json({ error: 'name required' }, { status: 400 });
@@ -69,6 +71,11 @@ export async function POST(request: NextRequest) {
                 ai_temperature: ai_temperature ?? 0.7,
                 ai_max_tokens: ai_max_tokens ?? 512,
                 ai_context_turns: ai_context_turns ?? 5,
+                // Advanced filters
+                target_tags: target_tags || [],
+                target_group_ids: target_group_ids || [],
+                exclude_tags: exclude_tags || [],
+                exclude_phones: exclude_phones || [],
             })
             .select()
             .single();
@@ -79,3 +86,4 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
+

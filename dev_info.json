@@ -1,0 +1,17 @@
+[
+  {
+    "id": "02bb9337-a987-4515-9856-73b96b9da3f2",
+    "tenant_id": "5f0c358e-bb91-4207-8966-a394cbae5678",
+    "name": "Sales Motoris 1 Jogja",
+    "phone_number": "6281128500700",
+    "provider": "wa-web",
+    "provider_config": {
+      "apiKey": "gasbroadcast_bridge_2026",
+      "apiUrl": "https://gasbroadcast-production-2e55.up.railway.app"
+    },
+    "session_id": "5f0c358e-1774922144557",
+    "status": "connected",
+    "last_active_at": null,
+    "created_at": "2026-03-31T01:55:44.66724+00:00"
+  }
+]
