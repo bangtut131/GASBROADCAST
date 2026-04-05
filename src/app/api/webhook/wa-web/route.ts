@@ -125,11 +125,12 @@ export async function POST(request: NextRequest) {
             }
 
             // Dedup: skip if this message ID was already processed
+            // Use .ilike to match partial IDs since WAHA sometimes prefixes IDs (e.g., true_628123@c.us_ABCDEF)
             if (payload.id) {
                 const { data: existing } = await supabase
                     .from('messages')
                     .select('id')
-                    .eq('wa_message_id', payload.id)
+                    .ilike('wa_message_id', `%${payload.id}%`)
                     .maybeSingle();
                 if (existing) {
                     console.log(`[Webhook wa-web] ⏭️ Skipping duplicate message ${payload.id}`);
@@ -140,6 +141,12 @@ export async function POST(request: NextRequest) {
             // Use body or fallback to [Media] so messages are always saved
             const messageBody = payload.body || '';
             const msgDirection = payload.direction || 'inbound';
+            
+            // Skip useless outbound echo from the bridge that has no content
+            if (msgDirection === 'outbound' && !messageBody && !payload.mediaUrl && !payload.media_url) {
+                console.log(`[Webhook wa-web] ⏭️ Skipping empty outbound echo from ${payload.from}`);
+                return NextResponse.json({ success: true, skipped: 'empty_outbound' });
+            }
 
             const device = await findDevice(sessionId);
             if (!device) {
@@ -483,6 +490,7 @@ export async function POST(request: NextRequest) {
                     content: replyText,
                     message_type: 'text',
                     wa_message_id: sendResult.messageId || null,
+                    is_from_bot: true
                 });
                 console.log(`[AutoReply] ✅ Reply sent successfully to ${phone}`);
             } else {
