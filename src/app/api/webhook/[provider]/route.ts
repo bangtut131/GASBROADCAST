@@ -167,7 +167,7 @@ export async function POST(
             }
 
             // 2. Check auto-reply rules (ordered by priority desc)
-            const { data: rules } = await supabase
+            const { data: rules, error: rulesErr } = await supabase
                 .from('autoreply_rules')
                 .select('*')
                 .eq('tenant_id', device.tenant_id)
@@ -175,7 +175,11 @@ export async function POST(
                 .or(`device_id.eq.${device.id},device_id.is.null`)
                 .order('priority', { ascending: false });
 
+            console.log(`[AutoReply] Phone: ${phone}, Message: "${message}", Device: ${device.name} (${device.id})`);
+            console.log(`[AutoReply] Rules found: ${rules?.length || 0}, Query error: ${rulesErr?.message || 'none'}`);
+
             if (!rules || rules.length === 0) {
+                console.log('[AutoReply] No active rules found — skipping');
                 return NextResponse.json({ received: true });
             }
 
@@ -197,22 +201,25 @@ export async function POST(
                 .eq('phone', phone)
                 .maybeSingle();
             const isBlacklisted = !!blacklisted;
+            if (isBlacklisted) console.log(`[AutoReply] Phone ${phone} is BLACKLISTED — all rules skipped`);
 
             let matchedRule: typeof rules[0] | null = null;
 
             for (const rule of rules) {
+                console.log(`[AutoReply] Checking rule: "${rule.name}" (type: ${rule.trigger_type}, priority: ${rule.priority})`);
+
                 // --- Advanced filter checks ---
 
                 // a. Exclude: skip if sender is blacklisted
-                if (isBlacklisted) continue;
+                if (isBlacklisted) { console.log(`[AutoReply]   → SKIP: blacklisted`); continue; }
 
                 // b. Exclude phones: skip if sender in exclude list
                 const exPhones: string[] = rule.exclude_phones || [];
-                if (exPhones.length > 0 && exPhones.some(ep => phone.includes(ep.replace(/\D/g, '')))) continue;
+                if (exPhones.length > 0 && exPhones.some(ep => phone.includes(ep.replace(/\D/g, '')))) { console.log(`[AutoReply]   → SKIP: exclude_phones`); continue; }
 
                 // c. Exclude tags: skip if sender has any excluded tag
                 const exTags: string[] = rule.exclude_tags || [];
-                if (exTags.length > 0 && exTags.some(et => contactTags.includes(et))) continue;
+                if (exTags.length > 0 && exTags.some(et => contactTags.includes(et))) { console.log(`[AutoReply]   → SKIP: exclude_tags`); continue; }
 
                 // d. Target tags: skip if set but sender has NONE of the target tags (AND with groups)
                 const tTags: string[] = rule.target_tags || [];
@@ -224,49 +231,62 @@ export async function POST(
                     // AND logic: ALL specified filters must match
                     const tagOk = !hasTagFilter || tTags.some(t => contactTags.includes(t));
                     const groupOk = !hasGroupFilter || tGroups.some(g => contactGroupIds.includes(g));
-                    if (!tagOk || !groupOk) continue;
+                    if (!tagOk || !groupOk) { console.log(`[AutoReply]   → SKIP: target filter (tagOk=${tagOk}, groupOk=${groupOk})`); continue; }
                 }
 
                 // --- Trigger matching ---
                 if (rule.trigger_type === 'ai') {
+                    console.log(`[AutoReply]   → MATCH: AI trigger (matches all messages)`);
                     matchedRule = rule; // AI rules match all messages
                     break;
                 }
 
                 const trigger = (rule.trigger_value || '').toLowerCase();
-                if (!trigger && rule.trigger_type !== 'ai') continue;
+                if (!trigger && rule.trigger_type !== 'ai') { console.log(`[AutoReply]   → SKIP: empty trigger value`); continue; }
 
                 if (rule.trigger_type === 'keyword') {
                     const keywords = trigger.split(',').map((k: string) => k.trim()).filter(Boolean);
-                    if (keywords.some((kw: string) => message === kw)) { matchedRule = rule; break; }
+                    if (keywords.some((kw: string) => message === kw)) { console.log(`[AutoReply]   → MATCH: keyword "${trigger}"`); matchedRule = rule; break; }
                 } else if (rule.trigger_type === 'contains') {
-                    if (message.includes(trigger)) { matchedRule = rule; break; }
+                    if (message.includes(trigger)) { console.log(`[AutoReply]   → MATCH: contains "${trigger}"`); matchedRule = rule; break; }
                 } else if (rule.trigger_type === 'regex') {
                     try {
-                        if (new RegExp(trigger, 'i').test(message)) { matchedRule = rule; break; }
+                        if (new RegExp(trigger, 'i').test(message)) { console.log(`[AutoReply]   → MATCH: regex "${trigger}"`); matchedRule = rule; break; }
                     } catch { }
                 }
+                console.log(`[AutoReply]   → NO MATCH for trigger "${trigger}"`);
             }
 
-            if (!matchedRule) return NextResponse.json({ received: true });
+            if (!matchedRule) {
+                console.log('[AutoReply] No rule matched — no reply');
+                return NextResponse.json({ received: true });
+            }
 
+            console.log(`[AutoReply] ✅ Matched rule: "${matchedRule.name}" → executing ${matchedRule.trigger_type} reply`);
             let replyText = '';
 
             if (matchedRule.trigger_type === 'ai') {
                 // === AI Reply ===
                 try {
-                    // Load knowledge base files for this rule
-                    const { data: knowledgeFiles } = await supabase
-                        .from('ai_knowledge_files')
-                        .select('title, category, content')
-                        .eq('rule_id', matchedRule.id)
-                        .eq('is_active', true)
-                        .order('category')
-                        .order('title');
+                    // Load knowledge base files for this rule (gracefully handles missing table)
+                    let knowledgeFiles: { title: string; category: string; content: string }[] = [];
+                    try {
+                        const { data: kbData } = await supabase
+                            .from('ai_knowledge_files')
+                            .select('title, category, content')
+                            .eq('rule_id', matchedRule.id)
+                            .eq('is_active', true)
+                            .order('category')
+                            .order('title');
+                        knowledgeFiles = kbData || [];
+                    } catch {
+                        // Table may not exist yet (migration 020 not run) — proceed without knowledge base
+                        console.log('[AI Reply] ai_knowledge_files table not available, proceeding without KB');
+                    }
 
                     // Build enhanced system prompt with knowledge base
                     let fullSystemPrompt = matchedRule.ai_system_prompt || '';
-                    if (knowledgeFiles && knowledgeFiles.length > 0) {
+                    if (knowledgeFiles.length > 0) {
                         const categoryLabels: Record<string, string> = {
                             product: '📦 Product Knowledge',
                             company: '🏢 Company Info',
@@ -305,6 +325,7 @@ export async function POST(
                     // Get AI reply
                     const aiResponse = await aiProvider.conversate(history, messageBody);
                     replyText = aiResponse.content;
+                    console.log(`[AutoReply] AI response (${replyText.length} chars): "${replyText.substring(0, 100)}..."`);
 
                     // Update conversation history
                     const newHistory: AIMessage[] = [
@@ -327,14 +348,19 @@ export async function POST(
                             { onConflict: 'tenant_id,phone,device_id' }
                         );
                 } catch (aiErr: any) {
-                    console.error('AI reply error:', aiErr);
+                    console.error('[AutoReply] ❌ AI reply error:', aiErr.message, aiErr.stack);
                     return NextResponse.json({ received: true, error: 'AI reply failed: ' + aiErr.message });
                 }
             } else {
                 replyText = matchedRule.response_text;
             }
 
-            if (!replyText) return NextResponse.json({ received: true });
+            if (!replyText) {
+                console.log('[AutoReply] Empty reply text — not sending');
+                return NextResponse.json({ received: true });
+            }
+
+            console.log(`[AutoReply] Sending reply to ${phone} via ${provider} (${replyText.length} chars)`);
 
             // Send reply via the same device
             let sendResult;
