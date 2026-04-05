@@ -379,7 +379,8 @@ export async function createSession(sessionId) {
                     type: msgType,
                     timestamp: msg.messageTimestamp,
                     mediaUrl,
-                    direction, // <--- Add direction mapping
+                    direction,
+                    _rawMessage: msg.message || null
                 },
             });
         }

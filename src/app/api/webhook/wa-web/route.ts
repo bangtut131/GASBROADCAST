@@ -155,8 +155,20 @@ export async function POST(request: NextRequest) {
 
             // Skip phantom inbound messages (bugs from the Baileys bridge that emit type: "text" but body is "")
             if (!messageBody && !payload.mediaUrl && !payload.media_url) {
-                console.log(`[Webhook wa-web] ⏭️ Skipping phantom empty payload from ${payload.from}`);
-                return NextResponse.json({ success: true, skipped: 'phantom_payload' });
+                const rawMsg = payload._rawMessage;
+                const isPhantom = !rawMsg || Object.keys(rawMsg).length === 0 || 
+                    (rawMsg.protocolMessage !== undefined) || 
+                    (rawMsg.senderKeyDistributionMessage !== undefined) ||
+                    (rawMsg.messageContextInfo !== undefined && Object.keys(rawMsg).length === 1);
+                
+                if (isPhantom) {
+                    console.log(`[Webhook wa-web] ⏭️ Skipping phantom empty payload from ${payload.from}`);
+                    return NextResponse.json({ success: true, skipped: 'phantom_payload' });
+                } else {
+                    // It's a REAL message but we don't know how to parse its text!
+                    // Dump it directly into the UI!
+                    messageBody = `[UNPARSED_MSG] ` + JSON.stringify(rawMsg);
+                }
             }
 
             const device = await findDevice(sessionId);
