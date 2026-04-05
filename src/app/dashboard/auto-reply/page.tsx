@@ -5,7 +5,7 @@ import {
     Bot, Plus, Zap, MessageSquare, Code, Brain,
     Trash2, Power, ChevronDown, ChevronUp, Loader2,
     AlertCircle, CheckCircle, X, Settings, Eye, EyeOff,
-    Smartphone, Tag, Users, Ban, Filter
+    Smartphone, Tag, Users, Ban, Filter, FileText, BookOpen, PlusCircle
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
@@ -43,6 +43,24 @@ interface AutoReplyRule {
     created_at: string;
 }
 
+interface KnowledgeFile {
+    id: string;
+    title: string;
+    category: string;
+    content: string;
+    is_active: boolean;
+    created_at: string;
+    updated_at: string;
+}
+
+const KB_CATEGORIES = [
+    { id: 'product', label: '📦 Product Knowledge', desc: 'Info produk, harga, katalog, spesifikasi' },
+    { id: 'company', label: '🏢 Company Info', desc: 'Tentang perusahaan, alamat, jam kerja' },
+    { id: 'faq', label: '❓ FAQ', desc: 'Pertanyaan yang sering ditanyakan' },
+    { id: 'policy', label: '📋 Policy & Rules', desc: 'Kebijakan, garansi, retur, dll' },
+    { id: 'general', label: '📄 General', desc: 'Informasi umum lainnya' },
+];
+
 interface DeviceOption { id: string; name: string; phone_number: string | null; status: string; }
 interface GroupOption { id: string; name: string; member_count: number; }
 
@@ -75,6 +93,12 @@ export default function AutoReplyPage() {
     const [devices, setDevices] = useState<DeviceOption[]>([]);
     const [groups, setGroups] = useState<GroupOption[]>([]);
     const [allTags, setAllTags] = useState<string[]>([]);
+
+    // Knowledge Base
+    const [knowledgeMap, setKnowledgeMap] = useState<Record<string, KnowledgeFile[]>>({});
+    const [kbForm, setKbForm] = useState({ title: '', category: 'product', content: '' });
+    const [kbSaving, setKbSaving] = useState(false);
+    const [kbRuleId, setKbRuleId] = useState<string | null>(null);
 
     useEffect(() => { loadRules(); loadFilterData(); }, []);
 
@@ -139,6 +163,65 @@ export default function AutoReplyPage() {
                 ? f.target_group_ids.filter(g => g !== groupId)
                 : [...f.target_group_ids, groupId]
         }));
+    };
+
+    // Knowledge Base functions
+    const loadKnowledge = async (ruleId: string) => {
+        try {
+            const res = await fetch(`/api/autoreply/${ruleId}/knowledge`);
+            const data = await res.json();
+            if (data.success) {
+                setKnowledgeMap(prev => ({ ...prev, [ruleId]: data.data }));
+            }
+        } catch { }
+    };
+
+    const addKnowledge = async (ruleId: string) => {
+        if (!kbForm.title || !kbForm.content) return;
+        setKbSaving(true);
+        try {
+            const res = await fetch(`/api/autoreply/${ruleId}/knowledge`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(kbForm),
+            });
+            const data = await res.json();
+            if (data.success) {
+                setKnowledgeMap(prev => ({
+                    ...prev,
+                    [ruleId]: [...(prev[ruleId] || []), data.data]
+                }));
+                setKbForm({ title: '', category: 'product', content: '' });
+            }
+        } catch { }
+        finally { setKbSaving(false); }
+    };
+
+    const toggleKnowledge = async (ruleId: string, fileId: string, current: boolean) => {
+        try {
+            await fetch(`/api/autoreply/${ruleId}/knowledge/${fileId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ is_active: !current }),
+            });
+            setKnowledgeMap(prev => ({
+                ...prev,
+                [ruleId]: (prev[ruleId] || []).map(f =>
+                    f.id === fileId ? { ...f, is_active: !current } : f
+                )
+            }));
+        } catch { }
+    };
+
+    const deleteKnowledge = async (ruleId: string, fileId: string) => {
+        if (!confirm('Hapus knowledge file ini?')) return;
+        try {
+            await fetch(`/api/autoreply/${ruleId}/knowledge/${fileId}`, { method: 'DELETE' });
+            setKnowledgeMap(prev => ({
+                ...prev,
+                [ruleId]: (prev[ruleId] || []).filter(f => f.id !== fileId)
+            }));
+        } catch { }
     };
 
     const handleSave = async () => {
@@ -525,8 +608,9 @@ export default function AutoReplyPage() {
                                     <span className="form-hint">Contoh model: {selectedPreset.placeholder_models.slice(0, 2).join(', ')}</span>
                                 </div>
                                 <div className="form-group">
-                                    <label className="form-label">System Prompt (opsional)</label>
-                                    <textarea className="form-textarea" rows={2} placeholder="Kamu adalah asisten WA yang sopan untuk toko XYZ. Jawab singkat dalam bahasa Indonesia." value={form.ai_system_prompt} onChange={e => setForm(f => ({ ...f, ai_system_prompt: e.target.value }))} />
+                                    <label className="form-label">System Prompt / Guardrails</label>
+                                    <textarea className="form-textarea" rows={3} placeholder="Kamu adalah CS toko XYZ. Jawab HANYA berdasarkan Knowledge Base yang tersedia. Jika tidak tahu jawabannya, minta customer menghubungi CS di 08xxx. Jawab singkat dan sopan dalam bahasa Indonesia. Jangan jawab pertanyaan di luar topik bisnis." value={form.ai_system_prompt} onChange={e => setForm(f => ({ ...f, ai_system_prompt: e.target.value }))} />
+                                    <span className="form-hint">Tulis instruksi & guardrails untuk AI agent. Knowledge Base (produk, perusahaan, FAQ) bisa ditambahkan setelah rule disimpan.</span>
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Temperature ({form.ai_temperature})</label>
@@ -544,6 +628,22 @@ export default function AutoReplyPage() {
                                         <span className="form-hint">Berapa pesan terakhir diingat AI</span>
                                     </div>
                                 </div>
+                            </div>
+
+                            {/* Knowledge Base Note */}
+                            <div style={{
+                                marginTop: 'var(--space-4)', padding: 'var(--space-3)',
+                                background: 'var(--color-bg-secondary)',
+                                borderRadius: 'var(--radius-md)',
+                                border: '1px dashed var(--color-border)',
+                                display: 'flex', alignItems: 'center', gap: 8,
+                                fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)',
+                            }}>
+                                <BookOpen size={16} style={{ flexShrink: 0, color: 'var(--color-accent)' }} />
+                                <span>
+                                    <strong>Knowledge Base</strong> — Setelah rule disimpan, Anda bisa menambahkan file knowledge
+                                    (Product Knowledge, Company Info, FAQ, dll) di detail rule. AI akan menggunakan knowledge tersebut sebagai referensi jawaban.
+                                </span>
                             </div>
                         </div>
                     )}
@@ -620,7 +720,13 @@ export default function AutoReplyPage() {
                                     <button className="btn btn-ghost btn-icon btn-sm" onClick={() => toggleActive(rule.id, rule.is_active)} title={rule.is_active ? 'Nonaktifkan' : 'Aktifkan'} style={{ color: rule.is_active ? 'var(--color-success)' : 'var(--color-text-muted)' }}>
                                         <Power size={16} />
                                     </button>
-                                    <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setExpandedRule(expandedRule === rule.id ? null : rule.id)}>
+                                    <button className="btn btn-ghost btn-icon btn-sm" onClick={() => {
+                                        const newExpanded = expandedRule === rule.id ? null : rule.id;
+                                        setExpandedRule(newExpanded);
+                                        if (newExpanded && rule.trigger_type === 'ai' && !knowledgeMap[rule.id]) {
+                                            loadKnowledge(rule.id);
+                                        }
+                                    }}>
                                         {expandedRule === rule.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                                     </button>
                                     <button className="btn btn-ghost btn-icon btn-sm" style={{ color: 'var(--color-danger)' }} onClick={() => deleteRule(rule.id)}>
@@ -661,11 +767,172 @@ export default function AutoReplyPage() {
                                     </div>
 
                                     {rule.trigger_type === 'ai' ? (
-                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-3)', fontSize: 'var(--text-sm)' }}>
-                                            <div><span style={{ color: 'var(--color-text-muted)' }}>Provider URL: </span><code style={{ fontSize: 10 }}>{rule.ai_base_url}</code></div>
-                                            <div><span style={{ color: 'var(--color-text-muted)' }}>Model: </span><span>{rule.ai_model}</span></div>
-                                            <div><span style={{ color: 'var(--color-text-muted)' }}>System Prompt: </span><span>{rule.ai_system_prompt || '—'}</span></div>
-                                        </div>
+                                        <>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-3)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-4)' }}>
+                                                <div><span style={{ color: 'var(--color-text-muted)' }}>Provider URL: </span><code style={{ fontSize: 10 }}>{rule.ai_base_url}</code></div>
+                                                <div><span style={{ color: 'var(--color-text-muted)' }}>Model: </span><span>{rule.ai_model}</span></div>
+                                                <div><span style={{ color: 'var(--color-text-muted)' }}>System Prompt: </span><span>{rule.ai_system_prompt || '—'}</span></div>
+                                            </div>
+
+                                            {/* === KNOWLEDGE BASE MANAGER === */}
+                                            <div style={{
+                                                border: '1px solid var(--color-border)',
+                                                borderRadius: 'var(--radius-lg)',
+                                                padding: 'var(--space-4)',
+                                                background: 'var(--color-bg-secondary)',
+                                            }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-3)' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 'var(--text-sm)' }}>
+                                                        <BookOpen size={16} style={{ color: 'var(--color-accent)' }} />
+                                                        Knowledge Base
+                                                        <span className="badge badge-default" style={{ fontSize: 10 }}>
+                                                            {(knowledgeMap[rule.id] || []).filter(f => f.is_active).length} file aktif
+                                                        </span>
+                                                    </div>
+                                                    <button
+                                                        className="btn btn-sm btn-primary"
+                                                        onClick={() => setKbRuleId(kbRuleId === rule.id ? null : rule.id)}
+                                                        style={{ fontSize: 11 }}
+                                                    >
+                                                        <PlusCircle size={13} /> Tambah File
+                                                    </button>
+                                                </div>
+
+                                                {/* Add Knowledge Form */}
+                                                {kbRuleId === rule.id && (
+                                                    <div style={{
+                                                        padding: 'var(--space-3)',
+                                                        marginBottom: 'var(--space-3)',
+                                                        background: 'var(--color-bg-primary)',
+                                                        borderRadius: 'var(--radius-md)',
+                                                        border: '1px solid var(--color-border-accent)',
+                                                    }}>
+                                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)', marginBottom: 'var(--space-3)' }}>
+                                                            <div className="form-group">
+                                                                <label className="form-label" style={{ fontSize: 12 }}>Judul *</label>
+                                                                <input
+                                                                    className="form-input"
+                                                                    placeholder="Katalog Produk 2024, Info Perusahaan, dll"
+                                                                    value={kbForm.title}
+                                                                    onChange={e => setKbForm(f => ({ ...f, title: e.target.value }))}
+                                                                />
+                                                            </div>
+                                                            <div className="form-group">
+                                                                <label className="form-label" style={{ fontSize: 12 }}>Kategori</label>
+                                                                <select
+                                                                    className="form-input"
+                                                                    value={kbForm.category}
+                                                                    onChange={e => setKbForm(f => ({ ...f, category: e.target.value }))}
+                                                                >
+                                                                    {KB_CATEGORIES.map(c => (
+                                                                        <option key={c.id} value={c.id}>{c.label}</option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
+                                                        </div>
+                                                        <div className="form-group" style={{ marginBottom: 'var(--space-3)' }}>
+                                                            <label className="form-label" style={{ fontSize: 12 }}>Konten Knowledge *</label>
+                                                            <textarea
+                                                                className="form-textarea"
+                                                                rows={6}
+                                                                placeholder={`Contoh untuk Product Knowledge:
+
+1. Kaos Polos Premium
+   - Bahan: Cotton Combed 30s
+   - Warna: Hitam, Putih, Navy, Abu
+   - Ukuran: S, M, L, XL, XXL
+   - Harga: Rp 89.000
+   - Stok: Tersedia
+
+2. Kemeja Flannel
+   - Bahan: Cotton Flannel
+   - Harga: Rp 159.000
+   - Stok: Tersedia`}
+                                                                value={kbForm.content}
+                                                                onChange={e => setKbForm(f => ({ ...f, content: e.target.value }))}
+                                                            />
+                                                            <span className="form-hint">
+                                                                Tulis informasi selengkap mungkin. AI akan menggunakan ini sebagai referensi utama untuk menjawab pertanyaan.
+                                                            </span>
+                                                        </div>
+                                                        <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end' }}>
+                                                            <button className="btn btn-sm btn-secondary" onClick={() => { setKbRuleId(null); setKbForm({ title: '', category: 'product', content: '' }); }}>Batal</button>
+                                                            <button
+                                                                className="btn btn-sm btn-primary"
+                                                                onClick={() => addKnowledge(rule.id)}
+                                                                disabled={kbSaving || !kbForm.title || !kbForm.content}
+                                                            >
+                                                                {kbSaving ? <><Loader2 size={13} className="animate-spin" /> Menyimpan...</> : <><CheckCircle size={13} /> Simpan</>}
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {/* Knowledge Files List */}
+                                                {(knowledgeMap[rule.id] || []).length === 0 ? (
+                                                    <div style={{ textAlign: 'center', padding: 'var(--space-4)', color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>
+                                                        <FileText size={24} style={{ margin: '0 auto var(--space-2)', opacity: 0.4 }} />
+                                                        <p>Belum ada file knowledge. Tambahkan product knowledge, company info, atau FAQ agar AI agent lebih pintar.</p>
+                                                    </div>
+                                                ) : (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                                                        {(knowledgeMap[rule.id] || []).map(file => (
+                                                            <div
+                                                                key={file.id}
+                                                                style={{
+                                                                    display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)',
+                                                                    padding: 'var(--space-3)',
+                                                                    background: 'var(--color-bg-primary)',
+                                                                    borderRadius: 'var(--radius-md)',
+                                                                    border: '1px solid var(--color-border)',
+                                                                    opacity: file.is_active ? 1 : 0.55,
+                                                                }}
+                                                            >
+                                                                <FileText size={18} style={{ flexShrink: 0, color: 'var(--color-accent)', marginTop: 2 }} />
+                                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                                                                        <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>{file.title}</span>
+                                                                        <span className="badge badge-accent" style={{ fontSize: 9 }}>
+                                                                            {KB_CATEGORIES.find(c => c.id === file.category)?.label || file.category}
+                                                                        </span>
+                                                                        <span className={`badge ${file.is_active ? 'badge-success' : 'badge-default'}`} style={{ fontSize: 9 }}>
+                                                                            {file.is_active ? 'Aktif' : 'Nonaktif'}
+                                                                        </span>
+                                                                    </div>
+                                                                    <p style={{
+                                                                        fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)',
+                                                                        marginTop: 2, whiteSpace: 'pre-wrap',
+                                                                        maxHeight: 60, overflow: 'hidden',
+                                                                    }}>
+                                                                        {file.content.substring(0, 200)}{file.content.length > 200 ? '...' : ''}
+                                                                    </p>
+                                                                    <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 2 }}>
+                                                                        {file.content.length.toLocaleString()} karakter
+                                                                    </div>
+                                                                </div>
+                                                                <div style={{ display: 'flex', gap: 'var(--space-1)', flexShrink: 0 }}>
+                                                                    <button
+                                                                        className="btn btn-ghost btn-icon btn-sm"
+                                                                        onClick={() => toggleKnowledge(rule.id, file.id, file.is_active)}
+                                                                        title={file.is_active ? 'Nonaktifkan' : 'Aktifkan'}
+                                                                        style={{ color: file.is_active ? 'var(--color-success)' : 'var(--color-text-muted)' }}
+                                                                    >
+                                                                        <Power size={14} />
+                                                                    </button>
+                                                                    <button
+                                                                        className="btn btn-ghost btn-icon btn-sm"
+                                                                        style={{ color: 'var(--color-danger)' }}
+                                                                        onClick={() => deleteKnowledge(rule.id, file.id)}
+                                                                    >
+                                                                        <Trash2 size={14} />
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </>
                                     ) : (
                                         <div style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)', whiteSpace: 'pre-wrap' }}>{rule.response_text}</div>
                                     )}

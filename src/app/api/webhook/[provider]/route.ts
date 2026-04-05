@@ -255,11 +255,36 @@ export async function POST(
             if (matchedRule.trigger_type === 'ai') {
                 // === AI Reply ===
                 try {
+                    // Load knowledge base files for this rule
+                    const { data: knowledgeFiles } = await supabase
+                        .from('ai_knowledge_files')
+                        .select('title, category, content')
+                        .eq('rule_id', matchedRule.id)
+                        .eq('is_active', true)
+                        .order('category')
+                        .order('title');
+
+                    // Build enhanced system prompt with knowledge base
+                    let fullSystemPrompt = matchedRule.ai_system_prompt || '';
+                    if (knowledgeFiles && knowledgeFiles.length > 0) {
+                        const categoryLabels: Record<string, string> = {
+                            product: '📦 Product Knowledge',
+                            company: '🏢 Company Info',
+                            faq: '❓ FAQ',
+                            policy: '📋 Policy & Rules',
+                            general: '📄 General',
+                        };
+                        const knowledgeText = knowledgeFiles
+                            .map(f => `### ${categoryLabels[f.category] || f.category} — ${f.title}\n${f.content}`)
+                            .join('\n\n');
+                        fullSystemPrompt += `\n\n=== KNOWLEDGE BASE ===\nGunakan informasi di bawah ini sebagai referensi utama untuk menjawab pertanyaan. Jika pertanyaan tidak terkait dengan knowledge base, jawab sesuai instruksi di atas.\n\n${knowledgeText}`;
+                    }
+
                     const aiProvider = createAIProvider({
                         ai_base_url: matchedRule.ai_base_url,
                         ai_api_key: matchedRule.ai_api_key,
                         ai_model: matchedRule.ai_model,
-                        ai_system_prompt: matchedRule.ai_system_prompt,
+                        ai_system_prompt: fullSystemPrompt,
                         ai_temperature: matchedRule.ai_temperature,
                         ai_max_tokens: matchedRule.ai_max_tokens,
                     });
