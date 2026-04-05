@@ -5,7 +5,7 @@ import {
     Bot, Plus, Zap, MessageSquare, Code, Brain,
     Trash2, Power, ChevronDown, ChevronUp, Loader2,
     AlertCircle, CheckCircle, X, Settings, Eye, EyeOff,
-    Smartphone, Tag, Users, Ban, Filter, FileText, BookOpen, PlusCircle
+    Smartphone, Tag, Users, Ban, Filter, FileText, BookOpen, PlusCircle, Upload
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
@@ -48,6 +48,8 @@ interface KnowledgeFile {
     title: string;
     category: string;
     content: string;
+    source_type: string;
+    file_name: string | null;
     is_active: boolean;
     created_at: string;
     updated_at: string;
@@ -99,6 +101,8 @@ export default function AutoReplyPage() {
     const [kbForm, setKbForm] = useState({ title: '', category: 'product', content: '' });
     const [kbSaving, setKbSaving] = useState(false);
     const [kbRuleId, setKbRuleId] = useState<string | null>(null);
+    const [kbInputMode, setKbInputMode] = useState<'manual' | 'upload'>('manual');
+    const kbFileRef = React.useRef<HTMLInputElement>(null);
 
     useEffect(() => { loadRules(); loadFilterData(); }, []);
 
@@ -222,6 +226,36 @@ export default function AutoReplyPage() {
                 [ruleId]: (prev[ruleId] || []).filter(f => f.id !== fileId)
             }));
         } catch { }
+    };
+
+    const uploadKnowledgeFile = async (ruleId: string, file: File) => {
+        if (!kbForm.title) { alert('Judul wajib diisi sebelum upload'); return; }
+        setKbSaving(true);
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('title', kbForm.title);
+            formData.append('category', kbForm.category);
+
+            const res = await fetch(`/api/autoreply/${ruleId}/knowledge/upload`, {
+                method: 'POST',
+                body: formData,
+            });
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error);
+
+            setKnowledgeMap(prev => ({
+                ...prev,
+                [ruleId]: [...(prev[ruleId] || []), data.data]
+            }));
+            setKbForm({ title: '', category: 'product', content: '' });
+            setKbRuleId(null);
+            if (kbFileRef.current) kbFileRef.current.value = '';
+            alert(`✅ File berhasil diproses!\n${data.stats.characters.toLocaleString()} karakter diekstrak dari ${data.stats.lines} baris`);
+        } catch (err: any) {
+            alert('❌ Gagal upload: ' + err.message);
+        }
+        finally { setKbSaving(false); }
     };
 
     const handleSave = async () => {
@@ -830,12 +864,45 @@ export default function AutoReplyPage() {
                                                                 </select>
                                                             </div>
                                                         </div>
-                                                        <div className="form-group" style={{ marginBottom: 'var(--space-3)' }}>
-                                                            <label className="form-label" style={{ fontSize: 12 }}>Konten Knowledge *</label>
-                                                            <textarea
-                                                                className="form-textarea"
-                                                                rows={6}
-                                                                placeholder={`Contoh untuk Product Knowledge:
+                                                        {/* Input Mode Toggle */}
+                                                        <div style={{ display: 'flex', gap: 0, marginBottom: 'var(--space-3)' }}>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setKbInputMode('manual')}
+                                                                style={{
+                                                                    flex: 1, padding: 'var(--space-2)', fontSize: 'var(--text-sm)', fontWeight: 600,
+                                                                    border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md) 0 0 var(--radius-md)',
+                                                                    background: kbInputMode === 'manual' ? 'var(--color-accent)' : 'var(--color-bg-secondary)',
+                                                                    color: kbInputMode === 'manual' ? '#fff' : 'var(--color-text-secondary)',
+                                                                    cursor: 'pointer', transition: 'all 0.15s',
+                                                                }}
+                                                            >
+                                                                ✏️ Tulis Manual
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setKbInputMode('upload')}
+                                                                style={{
+                                                                    flex: 1, padding: 'var(--space-2)', fontSize: 'var(--text-sm)', fontWeight: 600,
+                                                                    border: '1px solid var(--color-border)', borderLeft: 'none', borderRadius: '0 var(--radius-md) var(--radius-md) 0',
+                                                                    background: kbInputMode === 'upload' ? 'var(--color-accent)' : 'var(--color-bg-secondary)',
+                                                                    color: kbInputMode === 'upload' ? '#fff' : 'var(--color-text-secondary)',
+                                                                    cursor: 'pointer', transition: 'all 0.15s',
+                                                                }}
+                                                            >
+                                                                📁 Upload File
+                                                            </button>
+                                                        </div>
+
+                                                        {kbInputMode === 'manual' ? (
+                                                            /* Manual Text Input */
+                                                            <>
+                                                                <div className="form-group" style={{ marginBottom: 'var(--space-3)' }}>
+                                                                    <label className="form-label" style={{ fontSize: 12 }}>Konten Knowledge *</label>
+                                                                    <textarea
+                                                                        className="form-textarea"
+                                                                        rows={6}
+                                                                        placeholder={`Contoh untuk Product Knowledge:
 
 1. Kaos Polos Premium
    - Bahan: Cotton Combed 30s
@@ -848,23 +915,74 @@ export default function AutoReplyPage() {
    - Bahan: Cotton Flannel
    - Harga: Rp 159.000
    - Stok: Tersedia`}
-                                                                value={kbForm.content}
-                                                                onChange={e => setKbForm(f => ({ ...f, content: e.target.value }))}
-                                                            />
-                                                            <span className="form-hint">
-                                                                Tulis informasi selengkap mungkin. AI akan menggunakan ini sebagai referensi utama untuk menjawab pertanyaan.
-                                                            </span>
-                                                        </div>
-                                                        <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end' }}>
-                                                            <button className="btn btn-sm btn-secondary" onClick={() => { setKbRuleId(null); setKbForm({ title: '', category: 'product', content: '' }); }}>Batal</button>
-                                                            <button
-                                                                className="btn btn-sm btn-primary"
-                                                                onClick={() => addKnowledge(rule.id)}
-                                                                disabled={kbSaving || !kbForm.title || !kbForm.content}
-                                                            >
-                                                                {kbSaving ? <><Loader2 size={13} className="animate-spin" /> Menyimpan...</> : <><CheckCircle size={13} /> Simpan</>}
-                                                            </button>
-                                                        </div>
+                                                                        value={kbForm.content}
+                                                                        onChange={e => setKbForm(f => ({ ...f, content: e.target.value }))}
+                                                                    />
+                                                                    <span className="form-hint">
+                                                                        Tulis informasi selengkap mungkin. AI akan menggunakan ini sebagai referensi utama.
+                                                                    </span>
+                                                                </div>
+                                                                <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end' }}>
+                                                                    <button className="btn btn-sm btn-secondary" onClick={() => { setKbRuleId(null); setKbForm({ title: '', category: 'product', content: '' }); }}>Batal</button>
+                                                                    <button
+                                                                        className="btn btn-sm btn-primary"
+                                                                        onClick={() => addKnowledge(rule.id)}
+                                                                        disabled={kbSaving || !kbForm.title || !kbForm.content}
+                                                                    >
+                                                                        {kbSaving ? <><Loader2 size={13} className="animate-spin" /> Menyimpan...</> : <><CheckCircle size={13} /> Simpan</>}
+                                                                    </button>
+                                                                </div>
+                                                            </>
+                                                        ) : (
+                                                            /* File Upload */
+                                                            <>
+                                                                <div style={{
+                                                                    border: '2px dashed var(--color-border)',
+                                                                    borderRadius: 'var(--radius-md)',
+                                                                    padding: 'var(--space-6)',
+                                                                    textAlign: 'center',
+                                                                    marginBottom: 'var(--space-3)',
+                                                                    background: 'var(--color-bg-secondary)',
+                                                                    cursor: 'pointer',
+                                                                    transition: 'border-color 0.2s',
+                                                                }}
+                                                                    onClick={() => kbFileRef.current?.click()}
+                                                                    onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--color-accent)'; }}
+                                                                    onDragLeave={e => { e.currentTarget.style.borderColor = 'var(--color-border)'; }}
+                                                                    onDrop={e => {
+                                                                        e.preventDefault();
+                                                                        e.currentTarget.style.borderColor = 'var(--color-border)';
+                                                                        const file = e.dataTransfer.files?.[0];
+                                                                        if (file) uploadKnowledgeFile(rule.id, file);
+                                                                    }}
+                                                                >
+                                                                    <Upload size={32} style={{ margin: '0 auto var(--space-2)', color: 'var(--color-accent)', opacity: 0.6 }} />
+                                                                    <p style={{ fontWeight: 600, fontSize: 'var(--text-sm)', marginBottom: 4 }}>
+                                                                        {kbSaving ? 'Memproses file...' : 'Klik atau drag & drop file'}
+                                                                    </p>
+                                                                    <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
+                                                                        Mendukung: <strong>.xlsx, .xls, .csv, .pdf, .txt</strong>
+                                                                    </p>
+                                                                    <p style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 4 }}>
+                                                                        File akan di-parse otomatis. Untuk Excel, semua sheet akan diekstrak.
+                                                                    </p>
+                                                                    {kbSaving && <Loader2 size={20} className="animate-spin" style={{ margin: 'var(--space-2) auto 0', color: 'var(--color-accent)' }} />}
+                                                                </div>
+                                                                <input
+                                                                    ref={kbFileRef}
+                                                                    type="file"
+                                                                    accept=".xlsx,.xls,.csv,.pdf,.txt,.md"
+                                                                    style={{ display: 'none' }}
+                                                                    onChange={e => {
+                                                                        const f = e.target.files?.[0];
+                                                                        if (f) uploadKnowledgeFile(rule.id, f);
+                                                                    }}
+                                                                />
+                                                                <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end' }}>
+                                                                    <button className="btn btn-sm btn-secondary" onClick={() => { setKbRuleId(null); setKbForm({ title: '', category: 'product', content: '' }); }}>Batal</button>
+                                                                </div>
+                                                            </>
+                                                        )}
                                                     </div>
                                                 )}
 
@@ -895,6 +1013,10 @@ export default function AutoReplyPage() {
                                                                         <span className="badge badge-accent" style={{ fontSize: 9 }}>
                                                                             {KB_CATEGORIES.find(c => c.id === file.category)?.label || file.category}
                                                                         </span>
+                                                                        <span className="badge badge-info" style={{ fontSize: 9 }}>
+                                                                            {{ manual: '✏️ Manual', excel: '📊 Excel', pdf: '📕 PDF', csv: '📋 CSV', text: '📄 Text' }[file.source_type] || '📄'}
+                                                                        </span>
+                                                                        {file.file_name && <span style={{ fontSize: 9, color: 'var(--color-text-muted)' }}>({file.file_name})</span>}
                                                                         <span className={`badge ${file.is_active ? 'badge-success' : 'badge-default'}`} style={{ fontSize: 9 }}>
                                                                             {file.is_active ? 'Aktif' : 'Nonaktif'}
                                                                         </span>

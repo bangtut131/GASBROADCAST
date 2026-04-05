@@ -9,7 +9,10 @@ CREATE TABLE IF NOT EXISTS public.ai_knowledge_files (
   title TEXT NOT NULL,                -- e.g. "Katalog Produk", "Info Perusahaan"
   category TEXT DEFAULT 'general'     -- product, company, faq, policy, general
     CHECK (category IN ('product', 'company', 'faq', 'policy', 'general')),
-  content TEXT NOT NULL,              -- the actual knowledge text
+  content TEXT NOT NULL,              -- the actual knowledge text (extracted from file or manual)
+  source_type TEXT DEFAULT 'manual'   -- manual, excel, pdf, csv, text
+    CHECK (source_type IN ('manual', 'excel', 'pdf', 'csv', 'text')),
+  file_name TEXT,                     -- original filename if uploaded
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
