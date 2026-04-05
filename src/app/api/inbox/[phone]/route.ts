@@ -18,11 +18,15 @@ export async function GET(
             .select('*')
             .eq('phone', decodeURIComponent(phone))
             .neq('message_type', 'status')
-            .order('created_at', { ascending: true })
+            .order('created_at', { ascending: false })
             .limit(100);
 
         if (error) throw error;
-        const response = NextResponse.json({ success: true, data: messages });
+        
+        // Reverse so the oldest of the 100 is at the top, and newest is at the bottom
+        const sortedMessages = messages ? messages.reverse() : [];
+        
+        const response = NextResponse.json({ success: true, data: sortedMessages });
         response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate');
         return response;
     } catch (error: any) {

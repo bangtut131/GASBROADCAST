@@ -138,8 +138,13 @@ export async function POST(request: NextRequest) {
                 }
             }
 
-            // Use body or fallback to [Media] so messages are always saved
-            const messageBody = payload.body || '';
+            // Aggressively extract text content from any possible field format (Baileys/wa-web variants)
+            const rawBody = payload.body || payload.text || payload.message?.conversation || payload.message?.extendedTextMessage?.text || payload._data?.body || '';
+            let messageBody = typeof rawBody === 'string' ? rawBody : (JSON.stringify(rawBody) === '{}' ? '' : String(rawBody));
+            
+            // Clean up potentially weird text structures
+            if (messageBody === '[object Object]') messageBody = '';
+            
             const msgDirection = payload.direction || 'inbound';
             
             // Skip useless outbound echo from the bridge that has no content
