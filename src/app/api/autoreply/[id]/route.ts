@@ -13,13 +13,15 @@ export async function PATCH(
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const body = await request.json();
-        const { error } = await supabase
+        const { data, error } = await supabase
             .from('autoreply_rules')
             .update(body)
-            .eq('id', id);
+            .eq('id', id)
+            .select()
+            .single();
 
         if (error) throw error;
-        return NextResponse.json({ success: true });
+        return NextResponse.json({ success: true, data });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }

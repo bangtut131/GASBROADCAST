@@ -1,0 +1,62 @@
+[
+  {
+    "content": "Mohon maaf Kak, saya tidak dapat melihat media yang dikirim. Jika ada pertanyaan atau informasi yang dibutuhkan tentang produk atau layanan kami, silakan beri tahu ya! 😊",
+    "wa_message_id": null,
+    "created_at": "2026-04-05T11:59:56.679656+00:00",
+    "direction": "outbound"
+  },
+  {
+    "content": "[Media]",
+    "wa_message_id": "AC352A3F6091D6269D50AE210278138F",
+    "created_at": "2026-04-05T11:59:53.357745+00:00",
+    "direction": "inbound"
+  },
+  {
+    "content": "Kami buka dari Senin sampai Jumat, pukul 08.00 hingga 17.00 WIB. Jika ada pertanyaan lain, silakan tanya saja, Kak! 😊",
+    "wa_message_id": null,
+    "created_at": "2026-04-05T11:59:15.867836+00:00",
+    "direction": "outbound"
+  },
+  {
+    "content": "Jam buka",
+    "wa_message_id": "AC2C16198271AD5F7324E827DABBDDFE",
+    "created_at": "2026-04-05T11:59:12.804232+00:00",
+    "direction": "inbound"
+  },
+  {
+    "content": "Mohon maaf Kak, saya tidak dapat melihat media yang dikirim. Jika ada informasi yang bisa saya bantu terkait produk atau layanan kami, silakan beri tahu ya! 😊",
+    "wa_message_id": null,
+    "created_at": "2026-04-05T11:55:57.017634+00:00",
+    "direction": "outbound"
+  },
+  {
+    "content": "[Media]",
+    "wa_message_id": "ACFC11DCB2E6315BBC13C501CA691A8D",
+    "created_at": "2026-04-05T11:55:53.852253+00:00",
+    "direction": "inbound"
+  },
+  {
+    "content": "Kantor PT. Gama Agro Sejati berlokasi di Jalan Raya Agro No. 123, Jakarta. Jika ada yang bisa dibantu lagi, silakan tanya ya Kak! 😊",
+    "wa_message_id": null,
+    "created_at": "2026-04-05T11:55:39.868764+00:00",
+    "direction": "outbound"
+  },
+  {
+    "content": "Lokasi kantornya dimana",
+    "wa_message_id": "AC859C1291BAB3BBE7623C7B800B19A9",
+    "created_at": "2026-04-05T11:55:35.956778+00:00",
+    "direction": "inbound"
+  },
+  {
+    "content": "Mohon maaf Kak, saya tidak bisa melihat media yang dikirim. Jika ada yang ingin ditanyakan atau dibahas mengenai produk atau layanan kami, silakan beri tahu ya! 😊",
+    "wa_message_id": null,
+    "created_at": "2026-04-05T11:55:19.105338+00:00",
+    "direction": "outbound"
+  },
+  {
+    "content": "[Media]",
+    "wa_message_id": "ACE853CCA7D120F0A4194D246AF0D2E3",
+    "created_at": "2026-04-05T11:55:15.939147+00:00",
+    "direction": "inbound"
+  }
+]

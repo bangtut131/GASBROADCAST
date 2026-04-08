@@ -1,0 +1,62 @@
+[
+  {
+    "content": "Halo Kak! 👋 Selamat datang di PT. Gama Agro Sejati. Ada yang bisa saya bantu hari ini?",
+    "wa_message_id": null,
+    "created_at": "2026-04-05T12:18:39.035309+00:00",
+    "direction": "outbound"
+  },
+  {
+    "content": "assalamualaikum",
+    "wa_message_id": "ACEDF3764D57CBEBFC0D78CB06544BFE",
+    "created_at": "2026-04-05T12:18:35.920032+00:00",
+    "direction": "inbound"
+  },
+  {
+    "content": "Halo Kak! 👋 Selamat datang di PT. Gama Agro Sejati. Ada yang bisa saya bantu hari ini?",
+    "wa_message_id": null,
+    "created_at": "2026-04-05T12:13:39.554155+00:00",
+    "direction": "outbound"
+  },
+  {
+    "content": "[DEBUG] {\"id\":\"ACF47F30B2E00C494AD39CA54709777D\",\"from\":\"6285329859683\",\"body\":\"\",\"type\":\"text\",\"timestamp\":1775391207,\"mediaUrl\":null,\"direction\":\"inbound\"}",
+    "wa_message_id": "ACF47F30B2E00C494AD39CA54709777D",
+    "created_at": "2026-04-05T12:13:31.136866+00:00",
+    "direction": "inbound"
+  },
+  {
+    "content": "Kantor kami berlokasi di Jl. Raya Agro No. 123, Jakarta. Jika ada pertanyaan lebih lanjut, silakan beri tahu ya, Kak! 😊",
+    "wa_message_id": null,
+    "created_at": "2026-04-05T12:12:41.82582+00:00",
+    "direction": "outbound"
+  },
+  {
+    "content": "Kantornya dimana ya",
+    "wa_message_id": "ACCAD921384A83444BA0677CA4D625DB",
+    "created_at": "2026-04-05T12:12:38.666157+00:00",
+    "direction": "inbound"
+  },
+  {
+    "content": "Halo Kak! 👋 Selamat datang di PT. Gama Agro Sejati. Ada yang bisa saya bantu hari ini?",
+    "wa_message_id": null,
+    "created_at": "2026-04-05T12:12:19.452399+00:00",
+    "direction": "outbound"
+  },
+  {
+    "content": "[DEBUG] {\"id\":\"AC2350A8DB629CF09C4BBAF7206F27F4\",\"from\":\"6285329859683\",\"body\":\"\",\"type\":\"text\",\"timestamp\":1775391135,\"mediaUrl\":null,\"direction\":\"inbound\"}",
+    "wa_message_id": "AC2350A8DB629CF09C4BBAF7206F27F4",
+    "created_at": "2026-04-05T12:12:16.404601+00:00",
+    "direction": "inbound"
+  },
+  {
+    "content": "Halo Kak! 👋 Selamat datang di PT. Gama Agro Sejati. Ada yang bisa saya bantu hari ini?",
+    "wa_message_id": null,
+    "created_at": "2026-04-05T12:12:01.163802+00:00",
+    "direction": "outbound"
+  },
+  {
+    "content": "assalamualaikum",
+    "wa_message_id": "AC9F1BAB90D7633037278F8905786854",
+    "created_at": "2026-04-05T12:11:57.604039+00:00",
+    "direction": "inbound"
+  }
+]

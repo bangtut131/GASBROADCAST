@@ -5,7 +5,7 @@ import {
     Bot, Plus, Zap, MessageSquare, Code, Brain,
     Trash2, Power, ChevronDown, ChevronUp, Loader2,
     AlertCircle, CheckCircle, X, Settings, Eye, EyeOff,
-    Smartphone, Tag, Users, Ban, Filter, FileText, BookOpen, PlusCircle, Upload
+    Smartphone, Tag, Users, Ban, Filter, FileText, BookOpen, PlusCircle, Upload, Edit2
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
@@ -130,6 +130,7 @@ export default function AutoReplyPage() {
     const [showApiKey, setShowApiKey] = useState(false);
     const [expandedRule, setExpandedRule] = useState<string | null>(null);
     const [showFilters, setShowFilters] = useState(false);
+    const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
 
     // Data for dropdowns
     const [devices, setDevices] = useState<DeviceOption[]>([]);
@@ -320,7 +321,6 @@ export default function AutoReplyPage() {
             if (form.trigger_type === 'ai') {
                 Object.assign(payload, {
                     ai_base_url: form.ai_base_url,
-                    ai_api_key: form.ai_api_key,
                     ai_model: form.ai_model,
                     ai_system_prompt: form.ai_system_prompt,
                     ai_temperature: form.ai_temperature,
@@ -328,12 +328,26 @@ export default function AutoReplyPage() {
                     ai_context_turns: form.ai_context_turns,
                     response_text: '__ai__',
                 });
+                if (form.ai_api_key) {
+                    payload.ai_api_key = form.ai_api_key;
+                }
             }
-            const res = await fetch('/api/autoreply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            let res;
+            if (editingRuleId) {
+                res = await fetch(`/api/autoreply/${editingRuleId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            } else {
+                res = await fetch('/api/autoreply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            }
             const data = await res.json();
             if (!data.success) throw new Error(data.error);
-            setRules(prev => [data.data, ...prev]);
+            
+            if (editingRuleId) {
+                setRules(prev => prev.map(r => r.id === editingRuleId ? { ...r, ...data.data } : r));
+            } else {
+                setRules(prev => [data.data, ...prev]);
+            }
             setShowCreate(false);
+            setEditingRuleId(null);
             setForm(defaultForm);
             setShowFilters(false);
         } catch (err: any) { setError(err.message); }
@@ -354,6 +368,33 @@ export default function AutoReplyPage() {
     };
 
     const triggerIcon = (type: string) => ({ keyword: '🔑', contains: '✍️', regex: '🔧', ai: '🤖' }[type] || '❓');
+
+    const handleEdit = (rule: AutoReplyRule) => {
+        setForm({
+            ...defaultForm,
+            name: rule.name,
+            trigger_type: rule.trigger_type,
+            trigger_value: rule.trigger_value || '',
+            response_text: rule.response_text === '__ai__' ? '' : rule.response_text,
+            priority: rule.priority,
+            device_id: rule.device_id || '',
+            ai_preset: AI_PRESETS.find(p => p.baseUrl === rule.ai_base_url)?.id || 'sumopod',
+            ai_base_url: rule.ai_base_url || 'https://api.sumopod.com/v1',
+            ai_api_key: '', 
+            ai_model: rule.ai_model || '',
+            ai_system_prompt: rule.ai_system_prompt || DEFAULT_SYSTEM_PROMPT,
+            ai_temperature: (rule as any).ai_temperature ?? 0.7,
+            ai_max_tokens: (rule as any).ai_max_tokens ?? 512,
+            ai_context_turns: (rule as any).ai_context_turns ?? 5,
+            target_tags: rule.target_tags || [],
+            target_group_ids: rule.target_group_ids || [],
+            exclude_tags: rule.exclude_tags || [],
+            exclude_phones: (rule.exclude_phones || []).join(', '),
+        });
+        setEditingRuleId(rule.id);
+        setShowCreate(true);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
 
     // Helper to count active filters
     const countActiveFilters = () => {
@@ -396,7 +437,11 @@ export default function AutoReplyPage() {
                     <h1 className="page-title">Auto-Reply</h1>
                     <p className="page-description">Balas pesan otomatis berbasis keyword atau AI — dengan filter per device, tag, dan grup</p>
                 </div>
-                <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
+                <button className="btn btn-primary" onClick={() => {
+                    setEditingRuleId(null);
+                    setForm(defaultForm);
+                    setShowCreate(true);
+                }}>
                     <Plus size={16} /> Tambah Rule
                 </button>
             </div>
@@ -405,8 +450,8 @@ export default function AutoReplyPage() {
             {showCreate && (
                 <div className="card" style={{ marginBottom: 'var(--space-6)', borderColor: 'var(--color-border-accent)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-5)' }}>
-                        <h3 style={{ fontSize: 'var(--text-md)' }}>✨ Buat Auto-Reply Rule</h3>
-                        <button className="btn btn-ghost btn-icon btn-sm" onClick={() => { setShowCreate(false); setError(''); setShowFilters(false); }}><X size={16} /></button>
+                        <h3 style={{ fontSize: 'var(--text-md)' }}>{editingRuleId ? '✨ Edit Auto-Reply Rule' : '✨ Buat Auto-Reply Rule'}</h3>
+                        <button className="btn btn-ghost btn-icon btn-sm" onClick={() => { setShowCreate(false); setError(''); setShowFilters(false); setEditingRuleId(null); }}><X size={16} /></button>
                     </div>
                     {error && <div style={{ padding: 'var(--space-3)', background: 'var(--color-danger-soft)', color: 'var(--color-danger)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-4)', display: 'flex', gap: 8, alignItems: 'center' }}><AlertCircle size={16} />{error}</div>}
 
@@ -665,7 +710,7 @@ export default function AutoReplyPage() {
                                     <input className="form-input" placeholder="https://api.sumopod.com/v1" value={form.ai_base_url} onChange={e => setForm(f => ({ ...f, ai_base_url: e.target.value }))} />
                                 </div>
                                 <div className="form-group">
-                                    <label className="form-label">API Key *</label>
+                                    <label className="form-label">API Key {editingRuleId && <span style={{color: 'var(--color-text-muted)', fontSize: 10}}>(Kosongkan jika tidak ingin diubah)</span>}</label>
                                     <div style={{ position: 'relative' }}>
                                         <input className="form-input" type={showApiKey ? 'text' : 'password'} placeholder="sk-..." value={form.ai_api_key} onChange={e => setForm(f => ({ ...f, ai_api_key: e.target.value }))} style={{ paddingRight: 40 }} />
                                         <button type="button" style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' }} onClick={() => setShowApiKey(!showApiKey)}>
@@ -723,7 +768,7 @@ export default function AutoReplyPage() {
                     )}
 
                     <div style={{ display: 'flex', gap: 'var(--space-3)', justifyContent: 'flex-end' }}>
-                        <button className="btn btn-secondary" onClick={() => { setShowCreate(false); setForm(defaultForm); setShowFilters(false); }}>Batal</button>
+                        <button className="btn btn-secondary" onClick={() => { setShowCreate(false); setForm(defaultForm); setShowFilters(false); setEditingRuleId(null); }}>Batal</button>
                         <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
                             {saving ? <><Loader2 size={16} className="animate-spin" /> Menyimpan...</> : <><CheckCircle size={16} /> Simpan Rule</>}
                         </button>
@@ -793,6 +838,9 @@ export default function AutoReplyPage() {
                                 <div style={{ display: 'flex', gap: 'var(--space-2)', flexShrink: 0 }}>
                                     <button className="btn btn-ghost btn-icon btn-sm" onClick={() => toggleActive(rule.id, rule.is_active)} title={rule.is_active ? 'Nonaktifkan' : 'Aktifkan'} style={{ color: rule.is_active ? 'var(--color-success)' : 'var(--color-text-muted)' }}>
                                         <Power size={16} />
+                                    </button>
+                                    <button className="btn btn-ghost btn-icon btn-sm" onClick={() => handleEdit(rule)} title="Edit">
+                                        <Edit2 size={16} />
                                     </button>
                                     <button className="btn btn-ghost btn-icon btn-sm" onClick={() => {
                                         const newExpanded = expandedRule === rule.id ? null : rule.id;

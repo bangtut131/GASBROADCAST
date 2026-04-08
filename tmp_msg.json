@@ -1,0 +1,102 @@
+[
+  {
+    "id": "357df875-0fbc-48cf-a942-f71a9999185e",
+    "direction": "outbound",
+    "content": "Mohon maaf Kak, saya tidak bisa melihat media yang dikirim. Jika ada yang ingin ditanyakan tentang produk atau layanan kami, jangan ragu untuk bertanya! 😊",
+    "message_type": "text",
+    "phone": "6285329859683",
+    "wa_message_id": null,
+    "created_at": "2026-04-05T11:34:38.907228+00:00",
+    "is_from_bot": true
+  },
+  {
+    "id": "41e5a566-4760-499c-9f9d-7fb5494190f3",
+    "direction": "inbound",
+    "content": "[Media]",
+    "message_type": "text",
+    "phone": "6285329859683",
+    "wa_message_id": "ACE88DDB3677DA207527FB68FBBED8D7",
+    "created_at": "2026-04-05T11:34:35.563872+00:00",
+    "is_from_bot": false
+  },
+  {
+    "id": "f8a2b7bf-c2fa-4bea-b98e-bdba4de2aae0",
+    "direction": "inbound",
+    "content": "[Media]",
+    "message_type": "text",
+    "phone": "120363334732957782",
+    "wa_message_id": "3A94F491B12209E97E69",
+    "created_at": "2026-04-05T11:33:45.282994+00:00",
+    "is_from_bot": false
+  },
+  {
+    "id": "07e5b2b3-b468-47e5-86b0-22be5a5b58c3",
+    "direction": "outbound",
+    "content": "[Media]",
+    "message_type": "text",
+    "phone": "6281125202285",
+    "wa_message_id": "ACBDAD877FC77CB43AB5DDBFEAED7351",
+    "created_at": "2026-04-05T11:33:06.040004+00:00",
+    "is_from_bot": false
+  },
+  {
+    "id": "7bd27e0b-53d2-4f89-a7c7-3d5575540338",
+    "direction": "outbound",
+    "content": "[Media]",
+    "message_type": "text",
+    "phone": "6281125202285",
+    "wa_message_id": "ACFB88C5B2D89185678DB1CBD6C011E3",
+    "created_at": "2026-04-05T11:32:20.186074+00:00",
+    "is_from_bot": false
+  },
+  {
+    "id": "df9db72c-9521-495a-bef6-e69b42af538e",
+    "direction": "outbound",
+    "content": "[Media]",
+    "message_type": "text",
+    "phone": "6281125202285",
+    "wa_message_id": "ACE3C099E52CAEE606087EC66CA8310E",
+    "created_at": "2026-04-05T11:32:13.181371+00:00",
+    "is_from_bot": false
+  },
+  {
+    "id": "5bae37ab-d731-4b0e-a8c0-8c22e020fefb",
+    "direction": "outbound",
+    "content": "[Media]",
+    "message_type": "text",
+    "phone": "6281125202285",
+    "wa_message_id": "ACDCB532A9007E421EAB3B6F43A89459",
+    "created_at": "2026-04-05T11:32:06.356798+00:00",
+    "is_from_bot": false
+  },
+  {
+    "id": "ff45af97-cb6a-4ab2-ba91-867ae5cb010f",
+    "direction": "outbound",
+    "content": "[Media]",
+    "message_type": "text",
+    "phone": "6281125202285",
+    "wa_message_id": "ACB858F1519B673AE1BB98019222C906",
+    "created_at": "2026-04-05T11:31:59.203957+00:00",
+    "is_from_bot": false
+  },
+  {
+    "id": "c0279b30-9a94-47d5-b60a-483010ac70f9",
+    "direction": "outbound",
+    "content": "[Media]",
+    "message_type": "text",
+    "phone": "6281125202285",
+    "wa_message_id": "AC55FB5AD08504C9ED355EB43952562D",
+    "created_at": "2026-04-05T11:31:52.349019+00:00",
+    "is_from_bot": false
+  },
+  {
+    "id": "bb824186-7f52-4271-90e0-d7b7f72d6425",
+    "direction": "outbound",
+    "content": "[Media]",
+    "message_type": "text",
+    "phone": "6281125202285",
+    "wa_message_id": "AC8E90C7C4305E7A44E6F5F19ADD7412",
+    "created_at": "2026-04-05T11:31:45.146777+00:00",
+    "is_from_bot": false
+  }
+]
