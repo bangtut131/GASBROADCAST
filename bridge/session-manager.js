@@ -558,6 +558,9 @@ const MAX_CONCURRENT_SENDS = 1;
 const CHUNK_SIZE = 10;         // 10 contacts per relay
 const CHUNK_TIMEOUT = 30_000;  // 30 seconds timeout per chunk
 const CHUNK_DELAY = 2000;      // 2 seconds between chunks
+const SELF_POST_TIMEOUT = 60_000;  // 60s for initial self-post (includes media upload to CDN)
+const SELF_POST_RETRIES = 2;       // Retry Step 1 up to 2 times on failure
+const DEVICE_DELAY = 3000;         // 3s delay between devices in batch to avoid rate limiting
 
 async function downloadMedia(url) {
     const res = await fetch(url);
@@ -604,39 +607,55 @@ async function throttledAll(tasks, limit) {
 }
 
 // ===== Hybrid Chunked Status Relay =====
-// HYBRID APPROACH: sendMessage to self (registers on phone) + relayMessage chunks (distributes to contacts)
-// - Step 1: sock.sendMessage → sender's own JID only → phone sees "My Status" ✅
-// - Step 2: sock.relayMessage → chunks of CHUNK_SIZE → all other contacts get it ✅
+// HYBRID APPROACH: sendMessage to self + first batch (registers on phone) + relayMessage chunks (remaining contacts)
+// - Step 1: sock.sendMessage → sender JID + first batch of contacts → phone sees "My Status" ✅
+// - Step 2: sock.relayMessage → remaining chunks → all other contacts get it ✅
 // - Media uploaded ONCE via sendMessage, reused for relay (no double upload)
+// FIX: Including contacts in Step 1 ensures proper status registration on device.
+//      WhatsApp may not show status in "Status Saya" if statusJidList only contains self.
+//      Added retry logic + longer timeout for reliability across multiple devices.
 async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
     // buildStatusJidList always puts myJid first
     const myJid = allJids[0];
-    const otherJids = allJids.slice(1);
+    const allOtherJids = allJids.slice(1);
+
+    // Split contacts: first batch goes with Step 1 (sendMessage), rest via Step 2 (relay)
+    const firstBatchContacts = allOtherJids.slice(0, CHUNK_SIZE);
+    const step1Jids = [myJid, ...firstBatchContacts];
+    const otherJids = allOtherJids.slice(CHUNK_SIZE); // Remaining contacts for relay
 
     let sent = 0;
     let failed = 0;
 
-    // ── Step 1: sendMessage to sender's own JID ──────────────────────────
-    // This is the HIGH-LEVEL Baileys API that properly triggers WhatsApp's
-    // internal "status posted" protocol, making it visible in "My Status" on the phone.
-    // It also uploads media to WA CDN — we reuse that for relay (no double upload).
+    // ── Step 1: sendMessage to self + first batch of contacts ────────────
+    // Including contacts alongside myJid ensures WhatsApp properly registers
+    // the status on the posting device (visible in "Status Saya" tab).
+    // Uses longer timeout (SELF_POST_TIMEOUT) and retry logic for reliability.
     let sentMsg = null;
-    try {
-        sentMsg = await withTimeout(
-            sock.sendMessage('status@broadcast', mediaContent, {
-                statusJidList: [myJid],
-            }),
-            CHUNK_TIMEOUT,
-            `${sessionId}-self`
-        );
-        sent += 1;
-        console.log(`[${sessionId}] ✅ Status registered on sender device via sendMessage (${myJid})`);
-    } catch (err) {
-        failed += 1;
-        console.error(`[${sessionId}] ⚠️ Failed to register status on sender device: ${err.message}`);
+    for (let attempt = 1; attempt <= SELF_POST_RETRIES; attempt++) {
+        try {
+            sentMsg = await withTimeout(
+                sock.sendMessage('status@broadcast', mediaContent, {
+                    statusJidList: step1Jids,
+                }),
+                SELF_POST_TIMEOUT,
+                `${sessionId}-self-attempt${attempt}`
+            );
+            sent += step1Jids.length;
+            console.log(`[${sessionId}] ✅ Status registered on device (attempt ${attempt}) — ${step1Jids.length} JIDs (self + ${firstBatchContacts.length} contacts)`);
+            break; // Success — exit retry loop
+        } catch (err) {
+            console.error(`[${sessionId}] ⚠️ Step 1 attempt ${attempt}/${SELF_POST_RETRIES} failed: ${err.message}`);
+            if (attempt === SELF_POST_RETRIES) {
+                failed += step1Jids.length;
+                console.error(`[${sessionId}] ❌ All ${SELF_POST_RETRIES} attempts failed for status registration on device`);
+            } else {
+                await new Promise(r => setTimeout(r, 3000)); // Wait before retry
+            }
+        }
     }
 
-    // If no other contacts, we're done
+    // If no remaining contacts to relay, we're done (Step 1 covered everyone)
     if (otherJids.length === 0) {
         console.log(`[${sessionId}] 📊 Result: ${sent} sent, ${failed} failed out of ${allJids.length}`);
         return { sent, failed, total: allJids.length };
@@ -668,7 +687,7 @@ async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
     });
 
     const totalChunks = Math.ceil(otherJids.length / CHUNK_SIZE);
-    console.log(`[${sessionId}] 📤 Relaying to ${otherJids.length} other contacts in ${totalChunks} chunks of ${CHUNK_SIZE}...`);
+    console.log(`[${sessionId}] 📤 Relaying to ${otherJids.length} remaining contacts in ${totalChunks} chunks of ${CHUNK_SIZE}...`);
 
     // ── Step 4: Relay in chunks (low-level, fast, no timeout) ────────────
     for (let i = 0; i < otherJids.length; i += CHUNK_SIZE) {
@@ -704,7 +723,13 @@ export async function batchSendStatusImage(mediaUrl, caption, deviceEntries) {
     const buffer = await compressImage(rawBuffer);
     console.log(`[Batch] Sending ${(buffer.length / 1024).toFixed(0)}KB image to ${deviceEntries.length} devices (${MAX_CONCURRENT_SENDS} at a time)...`);
 
-    const tasks = deviceEntries.map((entry) => async () => {
+    const tasks = deviceEntries.map((entry, index) => async () => {
+        // Delay between devices to avoid WA rate limiting on status posting
+        if (index > 0) {
+            console.log(`[Batch] ⏳ Waiting ${DEVICE_DELAY / 1000}s before device ${index + 1}/${deviceEntries.length}...`);
+            await new Promise(r => setTimeout(r, DEVICE_DELAY));
+        }
+
         const { sessionId, contacts } = entry;
         const session = sessions.get(sessionId);
         if (!session || session.status !== 'connected') {
@@ -713,10 +738,12 @@ export async function batchSendStatusImage(mediaUrl, caption, deviceEntries) {
         }
         try {
             const statusJids = buildStatusJidList(session, contacts || []);
-            console.log(`[Batch] ⏳ ${sessionId} posting to ${statusJids.length} contacts...`);
+            console.log(`[Batch] ⏳ ${sessionId} (device ${index + 1}/${deviceEntries.length}) posting to ${statusJids.length} contacts...`);
+            // Clone buffer for each device to prevent potential mutation by Baileys
+            const deviceBuffer = Buffer.from(buffer);
             const result = await chunkedStatusRelay(
                 session.socket,
-                { image: buffer, caption: caption || undefined },
+                { image: deviceBuffer, caption: caption || undefined },
                 statusJids,
                 sessionId
             );
@@ -740,7 +767,13 @@ export async function batchSendStatusVideo(mediaUrl, caption, deviceEntries) {
     const buffer = await downloadMedia(mediaUrl);
     console.log(`[Batch] Sending ${(buffer.length / 1024).toFixed(0)}KB video to ${deviceEntries.length} devices (${MAX_CONCURRENT_SENDS} at a time)...`);
 
-    const tasks = deviceEntries.map((entry) => async () => {
+    const tasks = deviceEntries.map((entry, index) => async () => {
+        // Delay between devices to avoid WA rate limiting on status posting
+        if (index > 0) {
+            console.log(`[Batch] ⏳ Waiting ${DEVICE_DELAY / 1000}s before device ${index + 1}/${deviceEntries.length}...`);
+            await new Promise(r => setTimeout(r, DEVICE_DELAY));
+        }
+
         const { sessionId, contacts } = entry;
         const session = sessions.get(sessionId);
         if (!session || session.status !== 'connected') {
@@ -749,10 +782,12 @@ export async function batchSendStatusVideo(mediaUrl, caption, deviceEntries) {
         }
         try {
             const statusJids = buildStatusJidList(session, contacts || []);
-            console.log(`[Batch] ⏳ ${sessionId} posting to ${statusJids.length} contacts...`);
+            console.log(`[Batch] ⏳ ${sessionId} (device ${index + 1}/${deviceEntries.length}) posting to ${statusJids.length} contacts...`);
+            // Clone buffer for each device to prevent potential mutation by Baileys
+            const deviceBuffer = Buffer.from(buffer);
             const result = await chunkedStatusRelay(
                 session.socket,
-                { video: buffer, caption: caption || undefined },
+                { video: deviceBuffer, caption: caption || undefined },
                 statusJids,
                 sessionId
             );
