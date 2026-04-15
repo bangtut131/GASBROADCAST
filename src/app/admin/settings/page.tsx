@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import {
     ArrowLeft, Save, Loader2, CheckCircle, User,
-    Phone, Mail, Globe, MessageSquare, Image
+    Phone, Mail, Globe, MessageSquare, Image, Link2, Key
 } from 'lucide-react';
 
 export default function AdminSettingsPage() {
@@ -18,6 +18,8 @@ export default function AdminSettingsPage() {
         owner_whatsapp: '',
         platform_logo_url: '',
         upgrade_message: '',
+        default_bridge_url: '',
+        default_bridge_api_secret: '',
     });
 
     useEffect(() => {
@@ -83,6 +85,28 @@ export default function AdminSettingsPage() {
                     <div className="form-group">
                         <label className="form-label">Logo URL (opsional)</label>
                         <input className="form-input" value={settings.platform_logo_url} onChange={e => update('platform_logo_url', e.target.value)} placeholder="https://example.com/logo.png" />
+                    </div>
+                </div>
+            </div>
+
+            {/* Default Bridge Config */}
+            <div className="card" style={{ marginBottom: 'var(--space-4)' }}>
+                <h3 style={{ fontSize: 'var(--text-md)', marginBottom: 'var(--space-2)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                    <Link2 size={18} style={{ color: '#22c55e' }} /> Default Bridge Config (WA Web)
+                </h3>
+                <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginBottom: 'var(--space-4)' }}>
+                    Config ini otomatis terisi saat user baru mendaftarkan device WA Web (Bridge) pertama kali.
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
+                    <div className="form-group">
+                        <label className="form-label">Bridge URL</label>
+                        <input className="form-input" value={settings.default_bridge_url} onChange={e => update('default_bridge_url', e.target.value)} placeholder="https://your-bridge.up.railway.app" />
+                        <span className="form-hint">URL service bridge Baileys di Railway</span>
+                    </div>
+                    <div className="form-group">
+                        <label className="form-label">API Secret</label>
+                        <input className="form-input" type="password" value={settings.default_bridge_api_secret} onChange={e => update('default_bridge_api_secret', e.target.value)} placeholder="gas_smart_broadcast_bridge" />
+                        <span className="form-hint">Sama dengan API_SECRET di environment bridge</span>
                     </div>
                 </div>
             </div>

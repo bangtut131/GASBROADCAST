@@ -29,19 +29,22 @@ export default function DeviceConnectPage() {
     const qrInterval = useRef<NodeJS.Timeout | null>(null);
     const router = useRouter();
 
-    // Auto-fill from existing device config
+    // Auto-fill from existing device config OR platform_settings fallback
     const [configMode, setConfigMode] = useState<'default' | 'manual'>('default');
     const [defaultBridgeUrl, setDefaultBridgeUrl] = useState('');
     const [defaultApiSecret, setDefaultApiSecret] = useState('');
     const [hasExistingConfig, setHasExistingConfig] = useState(false);
 
     useEffect(() => {
-        // Fetch existing wa-web devices to get their bridge config
-        fetch('/api/devices')
-            .then(r => r.json())
-            .then(data => {
-                if (data.success && data.data) {
-                    const waWebDevice = data.data.find((d: any) => d.provider === 'wa-web' && d.provider_config);
+        const loadDefaults = async () => {
+            let found = false;
+
+            // 1. Try: fetch existing wa-web devices to get their bridge config
+            try {
+                const devRes = await fetch('/api/devices');
+                const devData = await devRes.json();
+                if (devData.success && devData.data) {
+                    const waWebDevice = devData.data.find((d: any) => d.provider === 'wa-web' && d.provider_config);
                     if (waWebDevice) {
                         const config = waWebDevice.provider_config as any;
                         const existingUrl = config.apiUrl || config.bridgeUrl || '';
@@ -52,11 +55,32 @@ export default function DeviceConnectPage() {
                             setBridgeUrl(existingUrl);
                             setBridgeApiSecret(existingSecret);
                             setHasExistingConfig(true);
+                            found = true;
                         }
                     }
                 }
-            })
-            .catch(() => {});
+            } catch { /* ignore */ }
+
+            // 2. Fallback: fetch platform_settings (global defaults set by owner)
+            if (!found) {
+                try {
+                    const psRes = await fetch('/api/admin/settings');
+                    const psData = await psRes.json();
+                    if (psData.success && psData.data) {
+                        const pUrl = psData.data.default_bridge_url || '';
+                        const pSecret = psData.data.default_bridge_api_secret || '';
+                        if (pUrl) {
+                            setDefaultBridgeUrl(pUrl);
+                            setDefaultApiSecret(pSecret);
+                            setBridgeUrl(pUrl);
+                            setBridgeApiSecret(pSecret);
+                            setHasExistingConfig(true);
+                        }
+                    }
+                } catch { /* ignore */ }
+            }
+        };
+        loadDefaults();
     }, []);
 
     // Poll QR code every 5s for WAHA and WA Web (bridge)
