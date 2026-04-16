@@ -510,6 +510,7 @@ export async function sendStatusText(sessionId, text, backgroundColor = '#1D4ED8
             font: font || 1,
         }, {
             statusJidList: statusJids,
+            ephemeralExpiration: WA_STATUS_EXPIRY,
         });
 
         return { success: true };
@@ -527,6 +528,7 @@ export async function sendStatusImage(sessionId, imageUrl, caption = '', contact
             caption: caption || undefined,
         }, {
             statusJidList: statusJids,
+            ephemeralExpiration: WA_STATUS_EXPIRY,
         });
 
         return { success: true };
@@ -544,6 +546,7 @@ export async function sendStatusVideo(sessionId, videoUrl, caption = '', contact
             caption: caption || undefined,
         }, {
             statusJidList: statusJids,
+            ephemeralExpiration: WA_STATUS_EXPIRY,
         });
 
         return { success: true };
@@ -558,9 +561,11 @@ const MAX_CONCURRENT_SENDS = 1;
 const CHUNK_SIZE = 10;         // 10 contacts per relay
 const CHUNK_TIMEOUT = 30_000;  // 30 seconds timeout per chunk
 const CHUNK_DELAY = 2000;      // 2 seconds between chunks
-const SELF_POST_TIMEOUT = 60_000;  // 60s for initial self-post (includes media upload to CDN)
-const SELF_POST_RETRIES = 2;       // Retry Step 1 up to 2 times on failure
+const SELF_POST_TIMEOUT = 90_000;  // 90s for initial self-post (includes media upload to CDN)
+const SELF_POST_RETRIES = 3;       // Retry Step 1 up to 3 times on failure
 const DEVICE_DELAY = 3000;         // 3s delay between devices in batch to avoid rate limiting
+const SELF_PROPAGATION_DELAY = 3000; // 3s wait after self-registration before broadcasting to contacts
+const WA_STATUS_EXPIRY = 86400;    // 24 hours — WhatsApp status/story ephemeral expiry
 
 async function downloadMedia(url) {
     const res = await fetch(url);
@@ -606,67 +611,102 @@ async function throttledAll(tasks, limit) {
     return results;
 }
 
-// ===== Hybrid Chunked Status Relay =====
-// HYBRID APPROACH: sendMessage to self + first batch (registers on phone) + relayMessage chunks (remaining contacts)
-// - Step 1: sock.sendMessage → sender JID + first batch of contacts → phone sees "My Status" ✅
-// - Step 2: sock.relayMessage → remaining chunks → all other contacts get it ✅
-// - Media uploaded ONCE via sendMessage, reused for relay (no double upload)
-// FIX: Including contacts in Step 1 ensures proper status registration on device.
-//      WhatsApp may not show status in "Status Saya" if statusJidList only contains self.
-//      Added retry logic + longer timeout for reliability across multiple devices.
+// ===== Three-Phase Chunked Status Relay =====
+// THREE-PHASE APPROACH: Separate self-registration from contact broadcasting
+// - Phase 1: sock.sendMessage → ONLY sender JID → phone sees "Status Saya" ✅
+// - Phase 2: sock.sendMessage → first batch contacts → uploads media to CDN + distributes ✅
+// - Phase 3: sock.relayMessage → remaining chunks → reuses CDN media ✅
+//
+// KEY FIX: WhatsApp Multi-Device treats status from companion devices (web/desktop)
+// differently. When statusJidList mixes self + contacts, WA processes it as a
+// "broadcast to contacts" and skips self-registration on the primary phone device.
+// By sending to self ONLY first, WA properly registers it in "Status Saya" on phone.
+// ephemeralExpiration: 86400 (24h) marks it as ephemeral status content.
 async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
     // buildStatusJidList always puts myJid first
     const myJid = allJids[0];
     const allOtherJids = allJids.slice(1);
 
-    // Split contacts: first batch goes with Step 1 (sendMessage), rest via Step 2 (relay)
-    const firstBatchContacts = allOtherJids.slice(0, CHUNK_SIZE);
-    const step1Jids = [myJid, ...firstBatchContacts];
-    const otherJids = allOtherJids.slice(CHUNK_SIZE); // Remaining contacts for relay
-
     let sent = 0;
     let failed = 0;
 
-    // ── Step 1: sendMessage to self + first batch of contacts ────────────
-    // Including contacts alongside myJid ensures WhatsApp properly registers
-    // the status on the posting device (visible in "Status Saya" tab).
-    // Uses longer timeout (SELF_POST_TIMEOUT) and retry logic for reliability.
+    // ── Phase 1: Self-Only Registration ──────────────────────────────────
+    // Send status with ONLY myJid in statusJidList. This is critical:
+    // WhatsApp needs a dedicated self-only broadcast to register the status
+    // on the phone's "Status Saya" tab. Mixing contacts here causes WA to
+    // skip self-registration (status appears on Web but not Phone).
     let sentMsg = null;
     for (let attempt = 1; attempt <= SELF_POST_RETRIES; attempt++) {
         try {
             sentMsg = await withTimeout(
                 sock.sendMessage('status@broadcast', mediaContent, {
-                    statusJidList: step1Jids,
+                    statusJidList: [myJid],
+                    ephemeralExpiration: WA_STATUS_EXPIRY,
                 }),
                 SELF_POST_TIMEOUT,
                 `${sessionId}-self-attempt${attempt}`
             );
-            sent += step1Jids.length;
-            console.log(`[${sessionId}] ✅ Status registered on device (attempt ${attempt}) — ${step1Jids.length} JIDs (self + ${firstBatchContacts.length} contacts)`);
+            sent += 1;
+            console.log(`[${sessionId}] ✅ Phase 1: Status registered on SELF only (attempt ${attempt})`);
             break; // Success — exit retry loop
         } catch (err) {
-            console.error(`[${sessionId}] ⚠️ Step 1 attempt ${attempt}/${SELF_POST_RETRIES} failed: ${err.message}`);
+            console.error(`[${sessionId}] ⚠️ Phase 1 attempt ${attempt}/${SELF_POST_RETRIES} failed: ${err.message}`);
             if (attempt === SELF_POST_RETRIES) {
-                failed += step1Jids.length;
-                console.error(`[${sessionId}] ❌ All ${SELF_POST_RETRIES} attempts failed for status registration on device`);
+                failed += 1;
+                console.error(`[${sessionId}] ❌ All ${SELF_POST_RETRIES} attempts failed for self-registration`);
             } else {
                 await new Promise(r => setTimeout(r, 3000)); // Wait before retry
             }
         }
     }
 
-    // If no remaining contacts to relay, we're done (Step 1 covered everyone)
-    if (otherJids.length === 0) {
+    // If no contacts to send to, we're done
+    if (allOtherJids.length === 0) {
+        console.log(`[${sessionId}] 📊 Result: ${sent} sent, ${failed} failed out of ${allJids.length} (self only, no contacts)`);
+        return { sent, failed, total: allJids.length };
+    }
+
+    // Wait for self-registration to propagate on WA servers before broadcasting
+    console.log(`[${sessionId}] ⏳ Waiting ${SELF_PROPAGATION_DELAY / 1000}s for self-registration propagation...`);
+    await new Promise(r => setTimeout(r, SELF_PROPAGATION_DELAY));
+
+    // ── Phase 2: Contact broadcast (first batch via sendMessage) ─────────
+    // Send to first batch of contacts via sendMessage. This also uploads
+    // media to WA CDN so Phase 3 can reuse the uploaded media URLs.
+    const firstBatchContacts = allOtherJids.slice(0, CHUNK_SIZE);
+    const remainingContacts = allOtherJids.slice(CHUNK_SIZE);
+
+    let contactSentMsg = null;
+    if (firstBatchContacts.length > 0) {
+        try {
+            contactSentMsg = await withTimeout(
+                sock.sendMessage('status@broadcast', mediaContent, {
+                    statusJidList: firstBatchContacts,
+                    ephemeralExpiration: WA_STATUS_EXPIRY,
+                }),
+                SELF_POST_TIMEOUT,
+                `${sessionId}-contacts-batch1`
+            );
+            sent += firstBatchContacts.length;
+            console.log(`[${sessionId}] ✅ Phase 2: Contact broadcast batch 1 — ${firstBatchContacts.length} contacts`);
+        } catch (err) {
+            failed += firstBatchContacts.length;
+            console.error(`[${sessionId}] ⚠️ Phase 2 contact batch 1 failed: ${err.message}`);
+        }
+    }
+
+    // If no remaining contacts, we're done
+    if (remainingContacts.length === 0) {
         console.log(`[${sessionId}] 📊 Result: ${sent} sent, ${failed} failed out of ${allJids.length}`);
         return { sent, failed, total: allJids.length };
     }
 
-    // ── Step 2: Build message content for relay ──────────────────────────
-    // If sendMessage succeeded, reuse its uploaded media (has CDN URLs already).
-    // If it failed, upload fresh via prepareWAMessageMedia as fallback.
+    // ── Phase 3: Build message content for relay ─────────────────────────
+    // Reuse uploaded media from Phase 2 (or Phase 1) to avoid re-uploading.
+    const sourceSentMsg = contactSentMsg || sentMsg;
     let msgContent;
-    if (sentMsg?.message) {
-        msgContent = sentMsg.message;
+    if (sourceSentMsg?.message) {
+        msgContent = sourceSentMsg.message;
         console.log(`[${sessionId}] ♻️ Reusing media from sendMessage (no re-upload needed)`);
     } else {
         const mediaMsg = await prepareWAMessageMedia(mediaContent, { upload: sock.waUploadToServer });
@@ -681,17 +721,18 @@ async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
         console.log(`[${sessionId}] 📤 Fresh media upload to CDN (sendMessage fallback)`);
     }
 
-    // ── Step 3: Generate message proto for relay ─────────────────────────
+    // Generate message proto for relay
     const msg = generateWAMessageFromContent('status@broadcast', msgContent, {
         userJid: sock.user.id,
+        ephemeralExpiration: WA_STATUS_EXPIRY,
     });
 
-    const totalChunks = Math.ceil(otherJids.length / CHUNK_SIZE);
-    console.log(`[${sessionId}] 📤 Relaying to ${otherJids.length} remaining contacts in ${totalChunks} chunks of ${CHUNK_SIZE}...`);
+    const totalChunks = Math.ceil(remainingContacts.length / CHUNK_SIZE);
+    console.log(`[${sessionId}] 📤 Phase 3: Relaying to ${remainingContacts.length} remaining contacts in ${totalChunks} chunks of ${CHUNK_SIZE}...`);
 
-    // ── Step 4: Relay in chunks (low-level, fast, no timeout) ────────────
-    for (let i = 0; i < otherJids.length; i += CHUNK_SIZE) {
-        const chunk = otherJids.slice(i, i + CHUNK_SIZE);
+    // Relay in chunks (low-level, fast, reuses CDN media)
+    for (let i = 0; i < remainingContacts.length; i += CHUNK_SIZE) {
+        const chunk = remainingContacts.slice(i, i + CHUNK_SIZE);
         const chunkNum = Math.floor(i / CHUNK_SIZE) + 1;
         try {
             await withTimeout(
@@ -709,7 +750,7 @@ async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
             console.error(`[${sessionId}] ⚠️ Chunk ${chunkNum}/${totalChunks} failed: ${err.message} (${chunk.length} skipped)`);
         }
         // Delay between chunks to avoid overwhelming WA server
-        if (i + CHUNK_SIZE < otherJids.length) {
+        if (i + CHUNK_SIZE < remainingContacts.length) {
             await new Promise(r => setTimeout(r, CHUNK_DELAY));
         }
     }
