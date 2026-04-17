@@ -202,137 +202,142 @@ export async function scrapeGoogleMaps(
             return items;
         }, maxResults);
 
-        // --- Phase 2: Click each result to get phone from detail panel ---
-        // Instead of page.goto() (slow full navigation), we click each card in the
-        // sidebar feed. Google Maps opens the detail panel on the same page.
-        // This is ~3-5x faster: ~1s per result vs ~4s with page.goto().
-        const needPhone = results.filter(function(r) { return !r.phone; });
-        console.log(`[Scraper] ${needPhone.length}/${results.length} results need phone. Clicking detail panels...`);
+        // --- Phase 2: Click each result in the feed to get phone from detail panel ---
+        // Google Maps shows phone on the detail panel (right side) when you click a card.
+        // We click each card, extract phone, then press Back. No full page.goto().
+        const missingPhoneCount = results.filter(r => !r.phone).length;
+        console.log(`[Scraper] ${missingPhoneCount}/${results.length} results need phone. Starting detail clicks...`);
 
-        if (needPhone.length > 0) {
-            // Go back to search results page first (in case we navigated away)
-            const currentUrl = page.url();
-            if (!currentUrl.includes('/maps/search/')) {
-                await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-                await delay(2000, 3000);
-                await page.waitForSelector(feedSelector, { timeout: 15000 }).catch(() => null);
-                // Re-scroll to load all results
-                for (let s = 0; s < Math.ceil(maxResults / 7) + 2; s++) {
-                    await page.evaluate((sel: string) => {
-                        const feed = document.querySelector(sel);
-                        if (feed) feed.scrollTop = feed.scrollHeight;
-                    }, feedSelector);
-                    await delay(1000, 2000);
-                }
-            }
-
-            // Build a map of name -> result index for matching
-            const nameToIdx = new Map<string, number>();
+        if (missingPhoneCount > 0) {
+            // Build URL -> result index map for matching
+            const urlToIdx = new Map<string, number>();
             for (let i = 0; i < results.length; i++) {
-                if (!results[i].phone) {
-                    nameToIdx.set(results[i].name, i);
+                if (!results[i].phone && results[i].placeUrl) {
+                    urlToIdx.set(results[i].placeUrl, i);
                 }
             }
-
-            // Get all clickable links in the feed
-            const linkHandles = await page.$$('div[role="feed"] > div > div > a[href*="/maps/place/"]');
-            console.log(`[Scraper] Found ${linkHandles.length} clickable links in feed`);
 
             let phonesFound = 0;
-            for (let i = 0; i < linkHandles.length; i++) {
-                // Get the name from link's parent card to match with our results
-                const cardName = await linkHandles[i].evaluate((el: Element) => {
-                    const card = el.closest('div');
-                    if (!card) return '';
-                    const parent = card.parentElement?.parentElement;
-                    if (!parent) return '';
-                    const nameEl = parent.querySelector('.fontHeadlineSmall, .qBF1Pd');
-                    return nameEl && nameEl.textContent ? nameEl.textContent.trim() : '';
-                }).catch(() => '');
+            let consecutiveFails = 0;
+            const startTime = Date.now();
+            const timeBudgetMs = 250_000; // Stop detail clicks after ~4 min to leave buffer
 
-                // Skip if this result already has a phone or we can't match it
-                const resultIdx = nameToIdx.get(cardName);
-                if (resultIdx === undefined) continue;
+            // We iterate by index, re-querying links each time to avoid stale element references
+            let linkIndex = 0;
+            while (linkIndex < 300 && consecutiveFails < 5 && (Date.now() - startTime) < timeBudgetMs) {
+                // Re-query all links in the feed each iteration (handles stale refs after back nav)
+                const allLinks = await page.$$('div[role="feed"] > div > div > a[href*="/maps/place/"]').catch(() => []);
+                if (linkIndex >= allLinks.length) break;
+
+                const link = allLinks[linkIndex];
+                linkIndex++;
+
+                // Get this link's href to match with our results
+                const href = await link.evaluate((el: Element) => el.getAttribute('href') || '').catch(() => '');
+                if (!href) continue;
+
+                // Find matching result that needs phone
+                let matchIdx = -1;
+                for (const [url, idx] of urlToIdx.entries()) {
+                    // Match by checking if the href contains the same place path
+                    if (href === url || href.includes(url.split('/maps/place/')[1]?.split('/')[0] || '___NOMATCH___')) {
+                        matchIdx = idx;
+                        break;
+                    }
+                }
+                if (matchIdx === -1) continue; // This card already has phone or no match
 
                 try {
-                    // Click the link to open the detail panel
-                    await linkHandles[i].click();
-                    await delay(1200, 2000);
+                    // Scroll the link into view and click it
+                    await link.evaluate((el: Element) => el.scrollIntoView({ block: 'center' }));
+                    await delay(200, 400);
+                    await link.click();
 
-                    // Extract phone from the detail panel
-                    const detail = await page.evaluate(function() {
+                    // Wait for detail panel to appear (tel: link or phone button)
+                    await page.waitForSelector('a[href^="tel:"], button[data-item-id*="phone"], button[aria-label*="Telepon"], button[aria-label*="Phone"]', { timeout: 5000 }).catch(() => null);
+                    await delay(800, 1200);
+
+                    // Extract phone from detail panel
+                    const phone = await page.evaluate(function() {
                         // Method 1: tel: link
                         const phoneEl = document.querySelector('a[href^="tel:"]');
-                        const phoneAttr = phoneEl ? phoneEl.getAttribute('href') : '';
-                        let phone = phoneAttr ? phoneAttr.replace('tel:', '') : '';
-                        if (!phone && phoneEl && phoneEl.textContent) {
-                            phone = phoneEl.textContent.trim();
+                        if (phoneEl) {
+                            const href = phoneEl.getAttribute('href') || '';
+                            const phone = href.replace('tel:', '').replace(/[\s\-()]/g, '');
+                            if (phone) return phone;
+                            const txt = phoneEl.textContent || '';
+                            if (txt) return txt.trim().replace(/[\s\-()]/g, '');
                         }
 
-                        // Method 2: phone button with data-item-id
-                        if (!phone) {
-                            const buttons = document.querySelectorAll('button[data-item-id*="phone"]');
-                            for (let j = 0; j < buttons.length; j++) {
-                                const txt = buttons[j].textContent ? buttons[j].textContent.trim() : '';
-                                const match = txt.match(/(\+?\d[\d\s\-()]{8,}\d)/);
-                                if (match) { phone = match[1]; break; }
-                            }
+                        // Method 2: phone button
+                        const buttons = document.querySelectorAll('button[data-item-id*="phone"]');
+                        for (let j = 0; j < buttons.length; j++) {
+                            const txt = buttons[j].textContent || '';
+                            const match = txt.match(/(\+?\d[\d\s\-()]{8,}\d)/);
+                            if (match) return match[1].replace(/[\s\-()]/g, '');
                         }
 
-                        // Method 3: aria-label with phone pattern
-                        if (!phone) {
-                            const allBtns = document.querySelectorAll('button[aria-label]');
-                            for (let j = 0; j < allBtns.length; j++) {
-                                const label = allBtns[j].getAttribute('aria-label') || '';
-                                const match = label.match(/(\+?\d[\d\s\-()]{8,}\d)/);
-                                if (match) { phone = match[1]; break; }
-                            }
+                        // Method 3: aria-label
+                        const allBtns = document.querySelectorAll('button[aria-label]');
+                        for (let j = 0; j < allBtns.length; j++) {
+                            const label = allBtns[j].getAttribute('aria-label') || '';
+                            const match = label.match(/(\+?\d[\d\s\-()]{8,}\d)/);
+                            if (match) return match[1].replace(/[\s\-()]/g, '');
                         }
 
-                        const websiteEl = document.querySelector('a[data-item-id="authority"]') as HTMLAnchorElement;
-                        const website = websiteEl && websiteEl.href ? websiteEl.href : '';
+                        return '';
+                    }).catch(() => '');
 
-                        return {
-                            phone: phone.replace(/[\s\-()]/g, ''),
-                            website: website,
-                        };
-                    });
-
-                    if (detail.phone) {
-                        results[resultIdx].phone = detail.phone;
+                    if (phone) {
+                        results[matchIdx].phone = phone;
+                        urlToIdx.delete(results[matchIdx].placeUrl);
                         phonesFound++;
-                    }
-                    if (detail.website && !results[resultIdx].website) {
-                        results[resultIdx].website = detail.website;
-                    }
-
-                    // Click back to return to the list
-                    const backBtn = await page.$('button[aria-label="Back"], button[aria-label="Kembali"]');
-                    if (backBtn) {
-                        await backBtn.click();
-                        await delay(800, 1200);
+                        consecutiveFails = 0;
                     } else {
-                        // Fallback: press Escape or navigate back
-                        await page.keyboard.press('Escape');
-                        await delay(800, 1200);
+                        consecutiveFails++;
                     }
 
-                    // Log progress every 10
-                    if ((phonesFound + i) % 10 === 0 && i > 0) {
-                        console.log(`[Scraper] Detail progress: ${i + 1}/${linkHandles.length}, phones found: ${phonesFound}`);
+                    // Also grab website if missing
+                    if (!results[matchIdx].website) {
+                        const website = await page.evaluate(() => {
+                            const el = document.querySelector('a[data-item-id="authority"]') as HTMLAnchorElement;
+                            return el && el.href ? el.href : '';
+                        }).catch(() => '');
+                        if (website) results[matchIdx].website = website;
                     }
-                } catch {
-                    // If click fails, try to go back to list
-                    try {
+
+                    // Navigate back to the list
+                    await page.goBack({ waitUntil: 'domcontentloaded', timeout: 8000 }).catch(async () => {
+                        // Fallback: try back button or escape
                         const backBtn = await page.$('button[aria-label="Back"], button[aria-label="Kembali"]');
                         if (backBtn) await backBtn.click();
                         else await page.keyboard.press('Escape');
+                    });
+
+                    // Wait for feed to reappear
+                    await page.waitForSelector(feedSelector, { timeout: 8000 }).catch(() => null);
+                    await delay(400, 800);
+
+                    // Stop if all phones found
+                    if (urlToIdx.size === 0) break;
+
+                    // Log progress every 10
+                    if (phonesFound % 10 === 0 && phonesFound > 0) {
+                        console.log(`[Scraper] Detail progress: phones=${phonesFound}, remaining=${urlToIdx.size}, time=${Math.round((Date.now() - startTime) / 1000)}s`);
+                    }
+                } catch {
+                    consecutiveFails++;
+                    // Try to recover back to list
+                    try {
+                        await page.goBack({ waitUntil: 'domcontentloaded', timeout: 5000 }).catch(() => null);
+                        await page.waitForSelector(feedSelector, { timeout: 5000 }).catch(() => null);
                         await delay(500, 800);
                     } catch { }
                 }
             }
 
-            console.log(`[Scraper] Detail phase complete. Found ${phonesFound} additional phones.`);
+            const elapsed = Math.round((Date.now() - startTime) / 1000);
+            console.log(`[Scraper] Detail phase complete: ${phonesFound} phones found in ${elapsed}s. ${consecutiveFails >= 5 ? 'Stopped: 5 consecutive failures.' : ''}`);
         }
 
         return { results };
