@@ -44,13 +44,18 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'No valid contacts found' }, { status: 400 });
         }
 
+        // Deduplicate by phone to prevent "ON CONFLICT DO UPDATE cannot affect row a second time"
+        const deduped = Array.from(
+            normalized.reduce((map, c) => map.set(c.phone, c), new Map()).values()
+        );
+
         // Upsert in batches of 100 to avoid timeouts
         const batchSize = 100;
         let inserted = 0;
         let updated = 0;
 
-        for (let i = 0; i < normalized.length; i += batchSize) {
-            const batch = normalized.slice(i, i + batchSize);
+        for (let i = 0; i < deduped.length; i += batchSize) {
+            const batch = deduped.slice(i, i + batchSize);
             const { data, error } = await supabase
                 .from('contacts')
                 .upsert(batch, { onConflict: 'tenant_id,phone', ignoreDuplicates: false })
@@ -63,9 +68,10 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
             success: true,
             data: {
-                total: normalized.length,
+                total: deduped.length,
                 imported: inserted,
                 invalid: contacts.length - normalized.length,
+                duplicates: normalized.length - deduped.length,
             },
         });
     } catch (error: any) {

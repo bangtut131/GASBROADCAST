@@ -202,16 +202,19 @@ export async function scrapeGoogleMaps(
             return items;
         }, maxResults);
 
-        // Visit detail pages for missing phone numbers
-        const maxDetailVisits = maxResults > 60 ? 5 : 10;
-        const needPhone = results.filter(function(r) { return !r.phone && r.placeUrl; }).slice(0, maxDetailVisits);
-        for (let i = 0; i < needPhone.length; i++) {
-            const biz = needPhone[i];
+        // Visit detail pages for ALL results missing phone number
+        // Previously capped at 5-10, causing most results to have no phone data
+        const needDetail = results.filter(function(r) { return r.placeUrl && (!r.phone || !r.website); });
+        console.log(`[Scraper] Visiting ${needDetail.length} detail pages for phone/website data...`);
+
+        for (let i = 0; i < needDetail.length; i++) {
+            const biz = needDetail[i];
             try {
-                await page.goto(biz.placeUrl, { waitUntil: 'domcontentloaded', timeout: 10000 });
-                await delay(1500, 2500);
+                await page.goto(biz.placeUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+                await delay(1500, 3000);
 
                 const detail = await page.evaluate(function() {
+                    // Method 1: tel: link
                     const phoneEl = document.querySelector('a[href^="tel:"]');
                     const phoneAttr = phoneEl ? phoneEl.getAttribute('href') : '';
                     let phone = phoneAttr ? phoneAttr.replace('tel:', '') : '';
@@ -219,29 +222,51 @@ export async function scrapeGoogleMaps(
                         phone = phoneEl.textContent.trim();
                     }
 
-                    const websiteEl = document.querySelector('a[data-item-id="authority"]') as HTMLAnchorElement;
-                    const website = websiteEl && websiteEl.href ? websiteEl.href : '';
-
-                    let fallbackPhone = '';
+                    // Method 2: phone button
                     if (!phone) {
                         const buttons = document.querySelectorAll('button[data-item-id*="phone"]');
                         for (let j = 0; j < buttons.length; j++) {
                             const btn = buttons[j];
                             const txt = btn.textContent ? btn.textContent.trim() : '';
                             const match = txt.match(/(\+?\d[\d\s\-()]{8,}\d)/);
-                            if (match) fallbackPhone = match[1];
+                            if (match) { phone = match[1]; break; }
                         }
                     }
 
+                    // Method 3: scan all aria-label containing phone patterns
+                    if (!phone) {
+                        const allBtns = document.querySelectorAll('button[aria-label]');
+                        for (let j = 0; j < allBtns.length; j++) {
+                            const label = allBtns[j].getAttribute('aria-label') || '';
+                            const match = label.match(/(\+?\d[\d\s\-()]{8,}\d)/);
+                            if (match) { phone = match[1]; break; }
+                        }
+                    }
+
+                    const websiteEl = document.querySelector('a[data-item-id="authority"]') as HTMLAnchorElement;
+                    const website = websiteEl && websiteEl.href ? websiteEl.href : '';
+
                     return {
-                        phone: (phone || fallbackPhone).replace(/[\s\-()]/g, ''),
+                        phone: phone.replace(/[\s\-()]/g, ''),
                         website: website,
                     };
                 });
 
                 if (detail.phone) biz.phone = detail.phone;
                 if (detail.website) biz.website = detail.website;
-            } catch { /* skip */ }
+
+                // Log progress every 10 visits
+                if ((i + 1) % 10 === 0) {
+                    console.log(`[Scraper] Detail progress: ${i + 1}/${needDetail.length}`);
+                }
+            } catch {
+                // Skip failed detail pages, continue to next
+            }
+
+            // Small delay between detail visits to avoid rate limiting
+            if (i < needDetail.length - 1) {
+                await delay(500, 1500);
+            }
         }
 
         return { results };
