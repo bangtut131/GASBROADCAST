@@ -150,6 +150,28 @@ export async function POST(request: NextRequest) {
                     await provider.batchSendStatusVideo(content.content_url, caption, deviceEntries, callbackUrl, jobId);
                 }
 
+                // Bridge accepted the batch — optimistically mark all pending as "sent".
+                // This prevents status staying "pending" forever when callback fails
+                // (e.g. bridge can't reach Next.js app URL, network issues, etc.)
+                // If bridge later reports failure via callback, it will update to "failed".
+                console.log(`[wa-status/post] Bridge accepted job ${jobId} — marking ${connectedDevices.length} device(s) as sent`);
+                await supabase
+                    .from('status_logs')
+                    .update({ status: 'sent', error_message: null })
+                    .eq('schedule_id', schedule.id)
+                    .eq('content_id', content.id)
+                    .eq('status', 'pending');
+
+                // Update schedule stats immediately
+                const schedUpdates: Record<string, unknown> = {
+                    last_posted_at: new Date().toISOString(),
+                    total_posted: (schedule.total_posted || 0) + 1,
+                };
+                if (schedule.mode === 'sequence' || schedule.mode === 'manual') {
+                    schedUpdates.sequence_index = (schedule.sequence_index || 0) + 1;
+                }
+                await supabase.from('status_schedules').update(schedUpdates).eq('id', schedule.id);
+
                 return NextResponse.json({
                     success: true,
                     accepted: true,
@@ -157,11 +179,12 @@ export async function POST(request: NextRequest) {
                         content_id: content.id,
                         content_title: content.title,
                         total_devices: connectedDevices.length,
-                        message: `Status sedang dikirim ke ${connectedDevices.length} device...`,
+                        message: `Status berhasil dikirim ke ${connectedDevices.length} device`,
                     },
                 });
             } catch (err: any) {
                 // Batch request itself failed — update logs to failed
+                console.error(`[wa-status/post] Batch request failed for job: ${err.message}`);
                 await supabase
                     .from('status_logs')
                     .update({ status: 'failed', error_message: err.message })

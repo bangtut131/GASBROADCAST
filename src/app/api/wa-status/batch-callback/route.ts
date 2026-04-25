@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 
 // POST /api/wa-status/batch-callback
-// Called by the bridge after batch status posting completes
+// Called by the bridge after batch status posting completes.
+// Since POST /api/wa-status/post now optimistically marks logs as "sent",
+// this callback is used primarily for ERROR CORRECTION:
+// - If a device failed, update its log from "sent" to "failed"
+// - If the whole batch failed, update all logs to "failed"
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
@@ -21,13 +25,15 @@ export async function POST(request: NextRequest) {
         const [scheduleId, contentId] = jobId.split(':');
 
         if (error) {
-            // Whole batch failed - update all pending logs for this job
+            // Whole batch failed — update all logs for this job to failed
+            // (they were optimistically set to "sent" by the POST handler)
+            console.error(`[batch-callback] Whole batch failed for job ${jobId}: ${error}`);
             await supabase
                 .from('status_logs')
                 .update({ status: 'failed', error_message: error })
                 .eq('schedule_id', scheduleId)
                 .eq('content_id', contentId)
-                .eq('status', 'pending');
+                .in('status', ['pending', 'sent']);
 
             return NextResponse.json({ success: true, updated: 'all-failed' });
         }
@@ -57,51 +63,33 @@ export async function POST(request: NextRequest) {
 
             const deviceMap = new Map((devices || []).map(d => [d.session_id, d]));
 
-            // Update each device's log
-            for (const r of results) {
+            // Only update FAILED devices — successful ones were already marked "sent"
+            const failedResults = results.filter((r: any) => !r.success);
+            for (const r of failedResults) {
                 const device = deviceMap.get(r.sessionId);
                 if (!device) continue;
 
+                console.log(`[batch-callback] Device ${device.name} (${r.sessionId}) failed: ${r.error}`);
                 await supabase
                     .from('status_logs')
                     .update({
-                        status: r.success ? 'sent' : 'failed',
-                        error_message: r.success ? null : r.error,
+                        status: 'failed',
+                        error_message: r.error || 'Bridge reported failure',
                     })
                     .eq('schedule_id', scheduleId)
                     .eq('content_id', contentId)
                     .eq('device_id', device.id)
-                    .eq('status', 'pending');
+                    .in('status', ['pending', 'sent']);
             }
 
             const successCount = results.filter((r: any) => r.success).length;
-            console.log(`[batch-callback] Job ${jobId}: ${successCount}/${results.length} succeeded`);
+            const failedCount = failedResults.length;
+            console.log(`[batch-callback] Job ${jobId}: ${successCount}/${results.length} succeeded, ${failedCount} failed`);
 
-            // Update schedule stats if any succeeded
-            if (successCount > 0) {
-                const { data: sched } = await supabase
-                    .from('status_schedules')
-                    .select('total_posted, sequence_index, mode')
-                    .eq('id', scheduleId)
-                    .single();
+            // Note: schedule stats and content use_count are already updated
+            // in POST /api/wa-status/post, so we don't update them here.
 
-                if (sched) {
-                    const updates: Record<string, unknown> = {
-                        last_posted_at: new Date().toISOString(),
-                        total_posted: (sched.total_posted || 0) + 1,
-                    };
-                    if (sched.mode === 'sequence' || sched.mode === 'manual') {
-                        updates.sequence_index = (sched.sequence_index || 0) + 1;
-                    }
-                    await supabase.from('status_schedules').update(updates).eq('id', scheduleId);
-                }
-
-                // Note: content last_used_at and use_count are updated optimistically
-                // in POST /api/wa-status/post BEFORE fire-and-forget, so we don't update here
-                // to avoid double-counting.
-            }
-
-            return NextResponse.json({ success: true, successCount, totalDevices: results.length });
+            return NextResponse.json({ success: true, successCount, failedCount, totalDevices: results.length });
         }
 
         return NextResponse.json({ success: true });
