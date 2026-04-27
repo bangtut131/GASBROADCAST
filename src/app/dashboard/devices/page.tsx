@@ -63,7 +63,7 @@ export default function DevicesPage() {
                 setDevices(prev => prev.map(d => {
                     const h = map[d.id];
                     if (h?.realStatus && h.realStatus !== d.status) {
-                        return { ...d, status: h.realStatus };
+                        return { ...d, status: h.realStatus as Device['status'] };
                     }
                     return d;
                 }));
