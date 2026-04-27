@@ -74,6 +74,20 @@ export async function createSession(sessionId) {
         console.log(`[${sessionId}] Using fallback WA version: ${version.join('.')}`);
     }
 
+    // ==================== Persistent Device Contacts Store ====================
+    // Device contacts collected via Baileys events (contacts.upsert, contacts.update, messaging-history.set)
+    // Persisted to disk so they survive bridge restarts.
+    // This is the NATIVE approach: only device phonebook contacts are used for status visibility,
+    // exactly like WA Web. No manual contact list injection from the app database.
+    const contactsStorePath = join(sessionDir, 'contacts-store.json');
+    let contactsArr = [];
+    try {
+        if (existsSync(contactsStorePath)) {
+            contactsArr = JSON.parse(readFileSync(contactsStorePath, 'utf8'));
+            console.log(`[${sessionId}] Loaded ${contactsArr.length} device contacts from disk`);
+        }
+    } catch (e) { contactsArr = []; }
+
     const sessionData = {
         sessionId,
         status: 'starting',
@@ -81,10 +95,20 @@ export async function createSession(sessionId) {
         qrBase64: null,
         phoneNumber: null,
         socket: null,
-        deviceContacts: new Set(), // Auto-collected from device's phone book
-        qrRetryCount: 0, // Track how many QR cycles without scan
+        deviceContacts: new Set(contactsArr), // Pre-populated from disk
+        qrRetryCount: 0,
     };
     sessions.set(sessionId, sessionData);
+
+    let contactsSaveTimer = null;
+    const scheduleContactsSave = () => {
+        if (contactsSaveTimer) clearTimeout(contactsSaveTimer);
+        contactsSaveTimer = setTimeout(() => {
+            try {
+                writeFileSync(contactsStorePath, JSON.stringify([...sessionData.deviceContacts]), 'utf8');
+            } catch { }
+        }, 3000);
+    };
 
     // ==================== Persistent Message Store ====================
     // Saves message content to disk per session for Baileys retry (getMessage handler)
@@ -393,19 +417,20 @@ export async function createSession(sessionId) {
         }
     });
 
-    // Collect device contacts for WA Status broadcasting
-    // Listen to multiple events since different Baileys versions emit different ones
+    // Collect device contacts for WA Status (native approach)
+    // These are the SAME contacts that WA Web uses internally.
+    // Status will be visible ONLY to these contacts, following WhatsApp's own rules.
     sock.ev.on('contacts.upsert', (contactsList) => {
         for (const contact of contactsList) {
             if (contact.id && contact.id.endsWith('@s.whatsapp.net')) {
                 sessionData.deviceContacts.add(contact.id);
             }
-            // Map LID to JID if both are present in the contact
             const cLid = contact.lid || (contact.id?.endsWith('@lid') ? contact.id : null);
             const cJid = contact.id?.endsWith('@s.whatsapp.net') ? contact.id : null;
             if (cLid && cJid) lidStore.set(cLid, cJid);
         }
         console.log(`[${sessionId}] contacts.upsert: ${sessionData.deviceContacts.size} total device contacts`);
+        scheduleContactsSave();
     });
 
     sock.ev.on('contacts.update', (contactsList) => {
@@ -418,6 +443,7 @@ export async function createSession(sessionId) {
             if (cLid && cJid) lidStore.set(cLid, cJid);
         }
         console.log(`[${sessionId}] contacts.update: ${sessionData.deviceContacts.size} total device contacts`);
+        scheduleContactsSave();
     });
 
     // Also collect contacts from history sync (covers initial connection)
@@ -429,6 +455,7 @@ export async function createSession(sessionId) {
                 }
             }
             console.log(`[${sessionId}] messaging-history.set: ${sessionData.deviceContacts.size} total device contacts`);
+            scheduleContactsSave();
         }
     });
 
@@ -501,17 +528,22 @@ export async function sendStatusText(sessionId, text, backgroundColor = '#1D4ED8
     try {
         // Build statusJidList: sender JID + all device contacts + any extra contacts
         const statusJids = buildStatusJidList(session, contacts);
-
-        await session.socket.sendMessage('status@broadcast', {
+        const mediaContent = {
             text,
             backgroundColor,
             font: font || 1,
-        }, {
-            statusJidList: statusJids,
-            ephemeralExpiration: WA_STATUS_EXPIRY,
-        });
+        };
 
-        return { success: true };
+        // Use chunked relay: self-registration first (guarantees "Status Saya" visible),
+        // then contacts in batches to prevent Baileys encryption timeout
+        const result = await chunkedStatusRelay(
+            session.socket,
+            mediaContent,
+            statusJids,
+            sessionId
+        );
+
+        return { success: result.sent > 0, sent: result.sent, total: result.total };
     } catch (err) { return { success: false, error: err.message }; }
 }
 
@@ -521,15 +553,15 @@ export async function sendStatusImage(sessionId, imageUrl, caption = '', contact
     try {
         const statusJids = buildStatusJidList(session, contacts);
 
-        await session.socket.sendMessage('status@broadcast', {
-            image: { url: imageUrl },
-            caption: caption || undefined,
-        }, {
-            statusJidList: statusJids,
-            ephemeralExpiration: WA_STATUS_EXPIRY,
-        });
+        // Use chunked relay: self-registration first, then contact batches
+        const result = await chunkedStatusRelay(
+            session.socket,
+            { image: { url: imageUrl }, caption: caption || undefined },
+            statusJids,
+            sessionId
+        );
 
-        return { success: true };
+        return { success: result.sent > 0, sent: result.sent, total: result.total };
     } catch (err) { return { success: false, error: err.message }; }
 }
 
@@ -539,15 +571,15 @@ export async function sendStatusVideo(sessionId, videoUrl, caption = '', contact
     try {
         const statusJids = buildStatusJidList(session, contacts);
 
-        await session.socket.sendMessage('status@broadcast', {
-            video: { url: videoUrl },
-            caption: caption || undefined,
-        }, {
-            statusJidList: statusJids,
-            ephemeralExpiration: WA_STATUS_EXPIRY,
-        });
+        // Use chunked relay: self-registration first, then contact batches
+        const result = await chunkedStatusRelay(
+            session.socket,
+            { video: { url: videoUrl }, caption: caption || undefined },
+            statusJids,
+            sessionId
+        );
 
-        return { success: true };
+        return { success: result.sent > 0, sent: result.sent, total: result.total };
     } catch (err) { return { success: false, error: err.message }; }
 }
 
@@ -589,7 +621,7 @@ async function compressImage(buffer) {
 }
 
 // Timeout wrapper: rejects after ms milliseconds
-function withTimeout(promise, ms, label) {
+export function withTimeout(promise, ms, label) {
     return Promise.race([
         promise,
         new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout after ${ms / 1000}s`)), ms)),
@@ -648,6 +680,7 @@ async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
         try {
             await withTimeout(
                 sock.sendMessage('status@broadcast', mediaContent, {
+                    broadcast: true,
                     statusJidList: [myJid],
                     ephemeralExpiration: WA_STATUS_EXPIRY,
                 }),
@@ -694,6 +727,7 @@ async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
         try {
             await withTimeout(
                 sock.sendMessage('status@broadcast', mediaContent, {
+                    broadcast: true,
                     statusJidList: chunk,
                     ephemeralExpiration: WA_STATUS_EXPIRY,
                 }),
@@ -801,26 +835,29 @@ export async function batchSendStatusVideo(mediaUrl, caption, deviceEntries) {
     return await throttledAll(tasks, MAX_CONCURRENT_SENDS);
 }
 
-// Build statusJidList: sender's own JID (first!) + device contacts + extra contacts
-// myJid is always first so it's included in batch 1 for phone self-registration.
-// NO LIMIT — chunkedStatusRelay batches using sendMessage in groups of CHUNK_SIZE.
-function buildStatusJidList(session, extraContacts = []) {
+// NATIVE APPROACH: Build statusJidList from DEVICE CONTACTS ONLY.
+// This is exactly what WA Web does internally — it uses the phone's
+// contact list (synced via Baileys events) to determine who can see the status.
+// WhatsApp's own privacy rules still apply: recipients must have your number saved.
+// extraContacts is kept as fallback but should normally be empty.
+export function buildStatusJidList(session, extraContacts = []) {
     const myJid = formatJid(session.socket.user.id.split(':')[0]);
     const seen = new Set([myJid]);
     const jids = [myJid];
 
-    // Device contacts (auto-collected from phone book)
+    // Device contacts (auto-collected from phone book via Baileys events)
+    // This IS the native WA contact list — same as what WA Web uses
     for (const jid of session.deviceContacts || []) {
         if (!seen.has(jid)) { seen.add(jid); jids.push(jid); }
     }
 
-    // Extra contacts from app
+    // Extra contacts (fallback — normally empty in native mode)
     for (const c of extraContacts) {
         const formatted = formatJid(c);
         if (!seen.has(formatted)) { seen.add(formatted); jids.push(formatted); }
     }
 
-    console.log(`[${session.sessionId}] Status JID list: ${jids.length} contacts (${jids.length - 1} contacts + self, sendMessage batching)`);
+    console.log(`[${session.sessionId}] Status JID list: ${jids.length} total (${session.deviceContacts?.size || 0} device contacts + self, native mode)`);
     return jids;
 }
 
@@ -839,6 +876,52 @@ export function getSession(sessionId) {
     const s = sessions.get(sessionId);
     if (!s) return null;
     return { sessionId: s.sessionId, status: s.status, phoneNumber: s.phoneNumber, qrAvailable: !!s.qrBase64 };
+}
+
+// Returns the full raw session object (including socket, deviceContacts, etc.)
+// Used by server.js for direct status endpoint async handling
+export function getSessionRaw(sessionId) {
+    return sessions.get(sessionId) || null;
+}
+
+// Distribute status to contacts in batches (background operation after self-registration)
+// Used by server.js async status endpoints
+export async function distributeToContactBatches(sock, mediaContent, contactJids, sessionId) {
+    const totalBatches = Math.ceil(contactJids.length / CHUNK_SIZE);
+    let sent = 0;
+    let failed = 0;
+
+    // Small initial delay before starting
+    await new Promise(r => setTimeout(r, 2000));
+
+    for (let i = 0; i < contactJids.length; i += CHUNK_SIZE) {
+        const chunk = contactJids.slice(i, i + CHUNK_SIZE);
+        const batchNum = Math.floor(i / CHUNK_SIZE) + 1;
+
+        if (i > 0) {
+            await new Promise(r => setTimeout(r, CHUNK_DELAY));
+        }
+
+        try {
+            await withTimeout(
+                sock.sendMessage('status@broadcast', mediaContent, {
+                    broadcast: true,
+                    statusJidList: chunk,
+                    ephemeralExpiration: WA_STATUS_EXPIRY,
+                }),
+                CHUNK_TIMEOUT,
+                `${sessionId}-bg-batch${batchNum}`
+            );
+            sent += chunk.length;
+            console.log(`[${sessionId}] ✅ BG batch ${batchNum}/${totalBatches}: ${chunk.length} contacts (total: ${sent})`);
+        } catch (err) {
+            failed += chunk.length;
+            console.error(`[${sessionId}] ⚠️ BG batch ${batchNum}/${totalBatches} failed: ${err.message} (${chunk.length} skipped)`);
+        }
+    }
+
+    console.log(`[${sessionId}] 📊 BG Distribution complete: ${sent} sent, ${failed} failed out of ${contactJids.length}`);
+    return { sent, failed, total: contactJids.length };
 }
 
 export function getAllSessions() {

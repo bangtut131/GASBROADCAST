@@ -15,6 +15,10 @@ import {
     batchSendStatusImage, batchSendStatusVideo,
     getSession, getAllSessions, getQR,
     restorePersistedSessions,
+    getSessionRaw as getSessionInternal,
+    buildStatusJidList as buildStatusJidListExternal,
+    withTimeout,
+    distributeToContactBatches,
 } from './session-manager.js';
 
 const app = express();
@@ -177,24 +181,118 @@ app.post('/api/sendVideo', auth, async (req, res) => {
 app.post('/api/:session/status/text', auth, async (req, res) => {
     const { text, backgroundColor, font, contacts } = req.body;
     if (!text) return res.status(400).json({ error: 'text required' });
-    const result = await sendStatusText(req.params.session, text, backgroundColor || '#1D4ED8', font || 1, contacts || []);
-    result.success ? res.json({ success: true }) : res.status(500).json({ error: result.error });
+
+    // Quick self-registration first (guarantees status visible on sender's device)
+    const session = getSessionInternal(req.params.session);
+    if (!session || session.status !== 'connected') return res.status(500).json({ error: 'Not connected' });
+
+    const statusJids = buildStatusJidListExternal(session, contacts || []);
+    const myJid = statusJids[0];
+    const contactJids = statusJids.slice(1);
+
+    // Step 1: Self-registration (sync — fast, 1 JID)
+    let selfOk = false;
+    try {
+        await withTimeout(
+            session.socket.sendMessage('status@broadcast', {
+                text, backgroundColor: backgroundColor || '#1D4ED8', font: font || 1,
+            }, { broadcast: true, statusJidList: [myJid], ephemeralExpiration: 86400 }),
+            30_000, `${req.params.session}-self`
+        );
+        selfOk = true;
+        console.log(`[${req.params.session}] ✅ Status text self-registration OK`);
+    } catch (err) {
+        console.error(`[${req.params.session}] ❌ Status text self-registration failed: ${err.message}`);
+        return res.status(500).json({ error: `Self-registration failed: ${err.message}` });
+    }
+
+    // Respond immediately — contact distribution happens in background
+    res.json({ success: true, selfRegistered: true, contactCount: contactJids.length });
+
+    // Step 2: Contact batches (async — in background)
+    if (contactJids.length > 0) {
+        setImmediate(async () => {
+            await distributeToContactBatches(session.socket, {
+                text, backgroundColor: backgroundColor || '#1D4ED8', font: font || 1,
+            }, contactJids, req.params.session);
+        });
+    }
 });
 
 app.post('/api/:session/status/image', auth, async (req, res) => {
     const { file, caption, contacts } = req.body;
     const mediaUrl = file?.url;
     if (!mediaUrl) return res.status(400).json({ error: 'file.url required' });
-    const result = await sendStatusImage(req.params.session, mediaUrl, caption || '', contacts || []);
-    result.success ? res.json({ success: true }) : res.status(500).json({ error: result.error });
+
+    const session = getSessionInternal(req.params.session);
+    if (!session || session.status !== 'connected') return res.status(500).json({ error: 'Not connected' });
+
+    const statusJids = buildStatusJidListExternal(session, contacts || []);
+    const myJid = statusJids[0];
+    const contactJids = statusJids.slice(1);
+
+    // Step 1: Self-registration (sync)
+    try {
+        await withTimeout(
+            session.socket.sendMessage('status@broadcast', {
+                image: { url: mediaUrl }, caption: caption || undefined,
+            }, { broadcast: true, statusJidList: [myJid], ephemeralExpiration: 86400 }),
+            60_000, `${req.params.session}-img-self`
+        );
+        console.log(`[${req.params.session}] ✅ Status image self-registration OK`);
+    } catch (err) {
+        console.error(`[${req.params.session}] ❌ Status image self-registration failed: ${err.message}`);
+        return res.status(500).json({ error: `Self-registration failed: ${err.message}` });
+    }
+
+    res.json({ success: true, selfRegistered: true, contactCount: contactJids.length });
+
+    // Step 2: Contact batches (async)
+    if (contactJids.length > 0) {
+        setImmediate(async () => {
+            await distributeToContactBatches(session.socket, {
+                image: { url: mediaUrl }, caption: caption || undefined,
+            }, contactJids, req.params.session);
+        });
+    }
 });
 
 app.post('/api/:session/status/video', auth, async (req, res) => {
     const { file, caption, contacts } = req.body;
     const mediaUrl = file?.url;
     if (!mediaUrl) return res.status(400).json({ error: 'file.url required' });
-    const result = await sendStatusVideo(req.params.session, mediaUrl, caption || '', contacts || []);
-    result.success ? res.json({ success: true }) : res.status(500).json({ error: result.error });
+
+    const session = getSessionInternal(req.params.session);
+    if (!session || session.status !== 'connected') return res.status(500).json({ error: 'Not connected' });
+
+    const statusJids = buildStatusJidListExternal(session, contacts || []);
+    const myJid = statusJids[0];
+    const contactJids = statusJids.slice(1);
+
+    // Step 1: Self-registration (sync)
+    try {
+        await withTimeout(
+            session.socket.sendMessage('status@broadcast', {
+                video: { url: mediaUrl }, caption: caption || undefined,
+            }, { broadcast: true, statusJidList: [myJid], ephemeralExpiration: 86400 }),
+            60_000, `${req.params.session}-vid-self`
+        );
+        console.log(`[${req.params.session}] ✅ Status video self-registration OK`);
+    } catch (err) {
+        console.error(`[${req.params.session}] ❌ Status video self-registration failed: ${err.message}`);
+        return res.status(500).json({ error: `Self-registration failed: ${err.message}` });
+    }
+
+    res.json({ success: true, selfRegistered: true, contactCount: contactJids.length });
+
+    // Step 2: Contact batches (async)
+    if (contactJids.length > 0) {
+        setImmediate(async () => {
+            await distributeToContactBatches(session.socket, {
+                video: { url: mediaUrl }, caption: caption || undefined,
+            }, contactJids, req.params.session);
+        });
+    }
 });
 
 // ==================== Batch Status Endpoints (Fire-and-Forget) ====================

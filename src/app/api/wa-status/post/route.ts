@@ -94,13 +94,11 @@ export async function POST(request: NextRequest) {
         // Post to ALL connected devices
         const results: { device_id: string; device_name: string; success: boolean; error?: string }[] = [];
 
-        // Fetch contacts once (all devices share same tenant)
-        const { data: contacts } = await supabase
-            .from('contacts')
-            .select('phone')
-            .eq('tenant_id', schedule.tenant_id)
-            .limit(2000);
-        const contactPhones = (contacts || []).map((c: any) => c.phone);
+        // NATIVE APPROACH: Don't send contact list from database.
+        // The bridge collects device contacts automatically via Baileys contacts.upsert events.
+        // This is exactly how WA Web works — status is visible to whoever is in
+        // the phone's contact list, following WhatsApp's own privacy rules.
+        // No manual contact list injection needed.
 
         // Use the first device's provider config (all devices share same bridge)
         const firstDevice = connectedDevices[0];
@@ -141,7 +139,7 @@ export async function POST(request: NextRequest) {
             try {
                 const deviceEntries = connectedDevices.map(d => ({
                     sessionId: d.session_id,
-                    contacts: contactPhones,
+                    contacts: [],  // Empty — bridge uses device contacts automatically (native approach)
                 }));
 
                 if (content.type === 'image') {
@@ -202,7 +200,7 @@ export async function POST(request: NextRequest) {
             for (const device of connectedDevices) {
                 try {
                     const devProvider = getProvider(device.provider, device.provider_config as Record<string, string>);
-                    const result = await devProvider.sendStatusText(device.session_id, caption || content.caption || '', '#1D4ED8', 1, contactPhones);
+                    const result = await devProvider.sendStatusText(device.session_id, caption || content.caption || '', '#1D4ED8', 1, []);  // Empty — bridge uses device contacts (native)
 
                     await supabase.from('status_logs').insert({
                         tenant_id: device.tenant_id,
