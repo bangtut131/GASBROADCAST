@@ -851,6 +851,10 @@ async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
             failed += chunk.length;
             console.error(`[${sessionId}] ⚠️ Chunk ${chunkNum}/${totalChunks} failed: ${err.message} (${chunk.length} skipped)`);
         }
+        // Delay between chunks to avoid overwhelming WA server
+        if (i + CHUNK_SIZE < remainingContacts.length) {
+            await new Promise(r => setTimeout(r, CHUNK_DELAY));
+        }
     }
 
     console.log(`[${sessionId}] 📊 Result: ${sent} sent, ${failed} failed out of ${allJids.length}`);
