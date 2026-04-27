@@ -754,6 +754,7 @@ async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
             await withTimeout(
                 sock.sendMessage('status@broadcast', mediaContent, {
                     statusJidList: selfJids,
+                    ephemeralExpiration: WA_STATUS_EXPIRY,
                 }),
                 SELF_TIMEOUT,
                 `${sessionId}-self-attempt${attempt}`
@@ -784,7 +785,8 @@ async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
     const totalBatches = Math.ceil(contactJids.length / CHUNK_SIZE);
 
     // Small delay after self-registration before starting contact batches
-    await new Promise(r => setTimeout(r, 2000));
+    console.log(`[${sessionId}] ⏳ Waiting 3s for self-registration to propagate on WA servers...`);
+    await new Promise(r => setTimeout(r, 3000));
 
     for (let i = 0; i < contactJids.length; i += CHUNK_SIZE) {
         const chunk = contactJids.slice(i, i + CHUNK_SIZE);
@@ -799,6 +801,7 @@ async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
             await withTimeout(
                 sock.sendMessage('status@broadcast', mediaContent, {
                     statusJidList: chunk,
+                    ephemeralExpiration: WA_STATUS_EXPIRY,
                 }),
                 CHUNK_TIMEOUT,
                 `${sessionId}-contacts-batch${batchNum}`
@@ -1004,7 +1007,6 @@ export async function distributeToContactBatches(sock, mediaContent, contactJids
         try {
             await withTimeout(
                 sock.sendMessage('status@broadcast', mediaContent, {
-                    broadcast: true,
                     statusJidList: chunk,
                     ephemeralExpiration: WA_STATUS_EXPIRY,
                 }),
