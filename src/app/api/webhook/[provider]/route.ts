@@ -75,12 +75,14 @@ export async function POST(
                 .single();
             
             if (device) {
-                await supabase.from('notifications').insert({
-                    tenant_id: device.tenant_id,
-                    title: `⚠️ Device "${device.name}" Bermasalah`,
-                    message: `Sesi enkripsi rusak (${payload.data?.decryptErrorCount || 0} error). Hapus device dan scan ulang QR code untuk memperbaiki.`,
-                    type: 'device_unhealthy',
-                }).catch(() => {}); // non-fatal
+                try {
+                    await supabase.from('notifications').insert({
+                        tenant_id: device.tenant_id,
+                        title: `⚠️ Device "${device.name}" Bermasalah`,
+                        message: `Sesi enkripsi rusak (${payload.data?.decryptErrorCount || 0} error). Hapus device dan scan ulang QR code untuk memperbaiki.`,
+                        type: 'device_unhealthy',
+                    });
+                } catch { /* non-fatal */ }
             }
             
             return NextResponse.json({ received: true, bridgeEvent: 'unhealthy' });
