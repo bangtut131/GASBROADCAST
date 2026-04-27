@@ -112,6 +112,57 @@ app.post('/api/sessions/:name/start', auth, async (req, res) => {
     }
 });
 
+// DELETE session — removes socket + credentials from disk
+app.delete('/api/sessions/:name', auth, async (req, res) => {
+    try {
+        const sessionId = req.params.name;
+        await deleteSession(sessionId);
+        console.log(`[Bridge] Session ${sessionId} deleted via API`);
+        res.json({ success: true, message: `Session ${sessionId} deleted` });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Also support POST for WAHA-compat delete
+app.post('/api/sessions/:name/stop', auth, async (req, res) => {
+    try {
+        const sessionId = req.params.name;
+        await deleteSession(sessionId);
+        console.log(`[Bridge] Session ${sessionId} stopped+deleted via API`);
+        res.json({ success: true, message: `Session ${sessionId} stopped` });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Cleanup orphaned sessions — delete sessions on disk that are NOT in the provided valid list
+app.post('/api/sessions/cleanup', auth, async (req, res) => {
+    try {
+        const { validSessionIds } = req.body; // array of session IDs that should exist
+        if (!Array.isArray(validSessionIds)) {
+            return res.status(400).json({ error: 'validSessionIds array required' });
+        }
+        const validSet = new Set(validSessionIds);
+        const allBridge = getAllSessions();
+        const orphans = allBridge.filter(s => !validSet.has(s.sessionId));
+        
+        for (const orphan of orphans) {
+            console.log(`[Bridge] 🧹 Cleaning orphaned session: ${orphan.sessionId}`);
+            await deleteSession(orphan.sessionId);
+        }
+        
+        console.log(`[Bridge] Cleanup done: ${orphans.length} orphans removed, ${validSessionIds.length} valid sessions kept`);
+        res.json({ 
+            success: true, 
+            cleaned: orphans.length, 
+            kept: validSessionIds.length,
+            orphanIds: orphans.map(o => o.sessionId),
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
 
 // ==================== Per-session ====================
 app.get('/api/:session/auth/qr', auth, (req, res) => {

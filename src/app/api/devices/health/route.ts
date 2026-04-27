@@ -112,6 +112,32 @@ export async function GET() {
             }
         }
 
+        // ── Cleanup orphaned sessions on bridge ──
+        // Send valid session IDs to bridge so it can delete zombie sessions
+        // that exist on disk but were deleted from the database
+        const validSessionIds = devices
+            .filter(d => d.session_id)
+            .map(d => d.session_id as string);
+        
+        if (validSessionIds.length > 0 && devices[0]) {
+            const config = devices[0].provider_config as Record<string, string> | null;
+            const apiUrl = config?.apiUrl || process.env.WAHA_API_URL || '';
+            const apiKey = config?.apiKey || process.env.WAHA_API_KEY || '';
+            if (apiUrl) {
+                try {
+                    await fetch(`${apiUrl}/api/sessions/cleanup`, {
+                        method: 'POST',
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'x-api-key': apiKey,
+                        },
+                        body: JSON.stringify({ validSessionIds }),
+                        signal: AbortSignal.timeout(5000),
+                    });
+                } catch { /* cleanup is non-critical */ }
+            }
+        }
+
         return NextResponse.json({ success: true, data: results });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
