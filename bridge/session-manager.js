@@ -730,76 +730,67 @@ async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
     const myJid = allJids[0];
     const allOtherJids = allJids.slice(1);
 
+    // Historically proven code from April 1st that successfully delivered to all contacts
+    const CHUNK_SIZE = 25; // Safe size to prevent timeout but not too small
+    const totalChunks = Math.ceil(allJids.length / CHUNK_SIZE) || 1;
+
+    console.log(`[${sessionId}] 📤 Uploading media and sending status to ${allJids.length} contacts + self in ${totalChunks} chunks of ${CHUNK_SIZE}...`);
+    
     let sent = 0;
     let failed = 0;
 
-    // The native WA broadcast limit is 256. We use chunks of 10-50 to prevent timeout/spam filters.
-    const CHUNK_SIZE = 10;
-    const totalChunks = Math.ceil(allOtherJids.length / CHUNK_SIZE) || 1;
-
-    console.log(`[${sessionId}] 📤 Sending status to ${allOtherJids.length} contacts + self in ${totalChunks} chunks of ${CHUNK_SIZE}...`);
-    
-    // ── Phase 1: Core Broadcast (Sender + First Batch) ───────────────────
-    // We MUST combine myJid with the first batch of contacts!
-    // If myJid is sent alone, WA server drops it as an invalid broadcast.
-    // If myJid is omitted, the sender's phone won't show the status.
-    const chunk1Contacts = allOtherJids.slice(0, CHUNK_SIZE);
-    const chunk1 = [myJid, ...chunk1Contacts];
-    let baseMsg = null;
-
     try {
-        console.log(`[${sessionId}] 📤 Phase 1: Sending core broadcast (Chunk 1/${totalChunks}) to ${chunk1.length} recipients (including self)...`);
+        const { prepareWAMessageMedia, generateWAMessageFromContent } = await import('@whiskeysockets/baileys');
         
-        baseMsg = await withTimeout(
-            sock.sendMessage('status@broadcast', mediaContent, {
-                statusJidList: chunk1,
-                ephemeralExpiration: WA_STATUS_EXPIRY,
-                broadcast: true
-            }),
-            120000, 
-            `${sessionId}-chunk-1`
-        );
-        sent += chunk1Contacts.length;
-        console.log(`[${sessionId}] ✅ Chunk 1 broadcasted successfully!`);
+        // Step 1: Upload media to WA CDN (ONCE)
+        const mediaMsg = await prepareWAMessageMedia(mediaContent, { upload: sock.waUploadToServer });
+    
+        // Step 2: Build message content with caption and ARGB
+        const msgContent = {};
+        if (mediaMsg.imageMessage) {
+            msgContent.imageMessage = { ...mediaMsg.imageMessage };
+            msgContent.imageMessage.backgroundArgb = 4278190080;
+            if (mediaContent.caption) msgContent.imageMessage.caption = mediaContent.caption;
+        } else if (mediaMsg.videoMessage) {
+            msgContent.videoMessage = { ...mediaMsg.videoMessage };
+            msgContent.videoMessage.backgroundArgb = 4278190080;
+            if (mediaContent.caption) msgContent.videoMessage.caption = mediaContent.caption;
+        }
+    
+        // Step 3: Generate message proto with unique ID
+        const msg = generateWAMessageFromContent('status@broadcast', msgContent, {
+            userJid: sock.user.id,
+        });
+
+        // Step 4: Relay in chunks
+        for (let i = 0; i < allJids.length; i += CHUNK_SIZE) {
+            const chunk = allJids.slice(i, i + CHUNK_SIZE);
+            const chunkNum = Math.floor(i / CHUNK_SIZE) + 1;
+            
+            try {
+                console.log(`[${sessionId}] 📤 Relaying chunk ${chunkNum}/${totalChunks} (${chunk.length} recipients)...`);
+                await withTimeout(
+                    sock.relayMessage('status@broadcast', msg.message, {
+                        messageId: msg.key.id,
+                        statusJidList: chunk,
+                    }),
+                    60000,
+                    `${sessionId}-chunk-${chunkNum}`
+                );
+                sent += chunk.length;
+                console.log(`[${sessionId}] ✅ Chunk ${chunkNum} broadcasted successfully!`);
+            } catch (err) {
+                failed += chunk.length;
+                console.error(`[${sessionId}] ⚠️ Chunk ${chunkNum} failed: ${err.message}`);
+            }
+            
+            if (i + CHUNK_SIZE < allJids.length) {
+                await new Promise(r => setTimeout(r, 1000));
+            }
+        }
     } catch (err) {
-        failed += chunk1Contacts.length;
-        console.error(`[${sessionId}] ❌ Chunk 1 failed critically: ${err.message}`);
-        // If Phase 1 fails, we cannot safely relay Phase 2 because we lack a valid base message
-        return { sent, failed, total: allJids.length };
+        console.error(`[${sessionId}] ❌ Failed to prepare/send status: ${err.message}`);
     }
-
-    // ── Phase 2: Relay to Remaining Contacts ────────────────────────────
-    // We use relayMessage with the exact same msgId so contacts see the identical status.
-    // CRITICAL: We DO NOT include myJid in these chunks! Sending the same msgId key 
-    // to myJid multiple times causes the device to detect protocol spam and hide the status!
-    for (let i = CHUNK_SIZE; i < allOtherJids.length; i += CHUNK_SIZE) {
-        const chunk = allOtherJids.slice(i, i + CHUNK_SIZE);
-        const chunkNum = Math.floor(i / CHUNK_SIZE) + 1;
-        
-        try {
-            console.log(`[${sessionId}] 📤 Relaying chunk ${chunkNum}/${totalChunks} (${chunk.length} recipients)...`);
-            await withTimeout(
-                sock.relayMessage('status@broadcast', baseMsg.message, {
-                    messageId: baseMsg.key.id,
-                    statusJidList: chunk,
-                }),
-                60000, 
-                `${sessionId}-chunk-${chunkNum}`
-            );
-            sent += chunk.length;
-            console.log(`[${sessionId}] ✅ Chunk ${chunkNum} broadcasted successfully!`);
-        } catch (err) {
-            failed += chunk.length;
-            console.error(`[${sessionId}] ⚠️ Chunk ${chunkNum} failed: ${err.message}`);
-        }
-
-        if (i + CHUNK_SIZE < allOtherJids.length) {
-            await new Promise(r => setTimeout(r, 1500));
-        }
-    }
-
-    // Add 1 to sent to account for myJid being successfully registered
-    if (sent > 0 || allOtherJids.length === 0) sent += 1;
 
     return { sent, failed, total: allJids.length };
 }
