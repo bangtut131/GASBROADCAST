@@ -733,42 +733,58 @@ async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
     let sent = 0;
     let failed = 0;
 
-    console.log(`[${sessionId}] 📤 Sending status via low-level relayMessage to bypass 6.7.21 bugs...`);
-    let sentMsg;
-    try {
-        console.log(`[${sessionId}] ⬆️ Uploading media to WhatsApp CDN...`);
-        const mediaMsg = await prepareWAMessageMedia(mediaContent, { upload: sock.waUploadToServer });
+    // The native WA broadcast limit is 256. We chunk at 250 to be safe.
+    const CHUNK_MAX = 250;
+    const totalChunks = Math.ceil(allOtherJids.length / CHUNK_MAX) || 1;
+
+    console.log(`[${sessionId}] 📤 Sending status to ${allOtherJids.length} contacts + self in ${totalChunks} chunks of ${CHUNK_MAX}...`);
+    
+    console.log(`[${sessionId}] ⬆️ Uploading media to WhatsApp CDN...`);
+    const mediaMsg = await prepareWAMessageMedia(mediaContent, { upload: sock.waUploadToServer });
+    
+    const msgContent = {};
+    if (mediaMsg.imageMessage) {
+        msgContent.imageMessage = { ...mediaMsg.imageMessage };
+        if (mediaContent.caption) msgContent.imageMessage.caption = mediaContent.caption;
+    } else if (mediaMsg.videoMessage) {
+        msgContent.videoMessage = { ...mediaMsg.videoMessage };
+        if (mediaContent.caption) msgContent.videoMessage.caption = mediaContent.caption;
+    }
+
+    const msg = generateWAMessageFromContent('status@broadcast', msgContent, {
+        userJid: sock.user.id,
+        ephemeralExpiration: WA_STATUS_EXPIRY,
+    });
+
+    for (let i = 0; i < allOtherJids.length; i += CHUNK_MAX) {
+        // ALWAYS include myJid in EVERY chunk so the host device sees it and WA registers it as a valid broadcast
+        const chunk = [myJid, ...allOtherJids.slice(i, i + CHUNK_MAX)];
+        const chunkNum = Math.floor(i / CHUNK_MAX) + 1;
         
-        const msgContent = {};
-        if (mediaMsg.imageMessage) {
-            msgContent.imageMessage = { ...mediaMsg.imageMessage };
-            if (mediaContent.caption) msgContent.imageMessage.caption = mediaContent.caption;
-        } else if (mediaMsg.videoMessage) {
-            msgContent.videoMessage = { ...mediaMsg.videoMessage };
-            if (mediaContent.caption) msgContent.videoMessage.caption = mediaContent.caption;
+        try {
+            console.log(`[${sessionId}] 📤 Relaying chunk ${chunkNum}/${totalChunks} (${chunk.length} recipients)...`);
+            await withTimeout(
+                sock.relayMessage('status@broadcast', msg.message, {
+                    messageId: msg.key.id,
+                    statusJidList: chunk,
+                }),
+                120000, 
+                `${sessionId}-chunk-${chunkNum}`
+            );
+            sent += chunk.length - 1; // don't double count myJid
+            console.log(`[${sessionId}] ✅ Chunk ${chunkNum} broadcasted successfully!`);
+        } catch (err) {
+            failed += chunk.length - 1;
+            console.error(`[${sessionId}] ⚠️ Chunk ${chunkNum} failed: ${err.message}`);
         }
 
-        const msg = generateWAMessageFromContent('status@broadcast', msgContent, {
-            userJid: sock.user.id,
-            ephemeralExpiration: WA_STATUS_EXPIRY,
-        });
-
-        console.log(`[${sessionId}] 📤 Relaying payload to ${allJids.length} contacts...`);
-        sentMsg = await withTimeout(
-            sock.relayMessage('status@broadcast', msg.message, {
-                messageId: msg.key.id,
-                statusJidList: allJids,
-                additionalAttributes: { broadcast: 'true' }
-            }),
-            120000, // 2 minutes timeout for large encryption
-            `${sessionId}-all-at-once`
-        );
-        sent += allJids.length;
-        console.log(`[${sessionId}] ✅ Status successfully broadcasted to ${allJids.length} contacts!`);
-    } catch (err) {
-        failed += allJids.length;
-        console.error(`[${sessionId}] ⚠️ Broadcast failed: ${err.message}`);
+        if (i + CHUNK_MAX < allOtherJids.length) {
+            await new Promise(r => setTimeout(r, 2000));
+        }
     }
+
+    // Add 1 to sent to account for myJid being successfully registered
+    if (sent > 0 || allOtherJids.length === 0) sent += 1;
 
     return { sent, failed, total: allJids.length };
 }
