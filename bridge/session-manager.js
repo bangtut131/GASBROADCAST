@@ -726,9 +726,7 @@ async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
         try {
             await withTimeout(
                 sock.sendMessage('status@broadcast', mediaContent, {
-                    broadcast: true,
                     statusJidList: [myJid],
-                    ephemeralExpiration: WA_STATUS_EXPIRY,
                 }),
                 SELF_TIMEOUT,
                 `${sessionId}-self-attempt${attempt}`
@@ -773,9 +771,7 @@ async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
         try {
             await withTimeout(
                 sock.sendMessage('status@broadcast', mediaContent, {
-                    broadcast: true,
                     statusJidList: chunk,
-                    ephemeralExpiration: WA_STATUS_EXPIRY,
                 }),
                 CHUNK_TIMEOUT,
                 `${sessionId}-contacts-batch${batchNum}`
