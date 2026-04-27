@@ -733,31 +733,23 @@ async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
     let sent = 0;
     let failed = 0;
 
-    // EXTREMELY CRITICAL: WhatsApp Server drops status broadcasts if the participants
-    // array in a single XML stanza exceeds exactly 10 members! (Issue #2118)
-    // We MUST chunk at exactly 10 members per stanza.
-    const CHUNK_MAX = 10;
-    
-    // We need 1 slot for myJid in EVERY chunk, so we have 9 slots for contacts
-    const CONTACTS_PER_CHUNK = CHUNK_MAX - 1; 
-    const totalChunks = Math.ceil(allOtherJids.length / CONTACTS_PER_CHUNK) || 1;
+    // The native WA broadcast limit is 256. We use chunks of 10-50 to prevent timeout/spam filters.
+    const CHUNK_SIZE = 10;
+    const totalChunks = Math.ceil(allOtherJids.length / CHUNK_SIZE) || 1;
 
-    console.log(`[${sessionId}] 📤 Sending status to ${allOtherJids.length} contacts + self in ${totalChunks} chunks of ${CHUNK_MAX}...`);
+    console.log(`[${sessionId}] 📤 Sending status to ${allOtherJids.length} contacts + self in ${totalChunks} chunks of ${CHUNK_SIZE}...`);
     
-    // Chunk 1 MUST include myJid and will be sent via sendMessage.
-    // This guarantees the status is synced to the sender's phone ("Status Saya")
-    // and correctly generates the media message structure and message ID.
-    const chunk1Contacts = allOtherJids.slice(0, CONTACTS_PER_CHUNK);
+    // ── Phase 1: Core Broadcast (Sender + First Batch) ───────────────────
+    // We MUST combine myJid with the first batch of contacts!
+    // If myJid is sent alone, WA server drops it as an invalid broadcast.
+    // If myJid is omitted, the sender's phone won't show the status.
+    const chunk1Contacts = allOtherJids.slice(0, CHUNK_SIZE);
     const chunk1 = [myJid, ...chunk1Contacts];
     let baseMsg = null;
 
     try {
         console.log(`[${sessionId}] 📤 Phase 1: Sending core broadcast (Chunk 1/${totalChunks}) to ${chunk1.length} recipients (including self)...`);
         
-        // Add backgroundArgb which is sometimes required by strict WA validation rules
-        if (mediaContent.image) mediaContent.backgroundArgb = 4278190080;
-        if (mediaContent.video) mediaContent.backgroundArgb = 4278190080;
-
         baseMsg = await withTimeout(
             sock.sendMessage('status@broadcast', mediaContent, {
                 statusJidList: chunk1,
@@ -771,17 +763,17 @@ async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
     } catch (err) {
         failed += chunk1Contacts.length;
         console.error(`[${sessionId}] ❌ Chunk 1 failed critically: ${err.message}`);
-        // If Chunk 1 fails, we cannot relay the others because we don't have a valid base message ID
+        // If Phase 1 fails, we cannot safely relay Phase 2 because we lack a valid base message
         return { sent, failed, total: allJids.length };
     }
 
-    // Remaining chunks use relayMessage with the exact same msgId and payload.
-    // This implements "device fanout", delivering the exact same status to the rest of the contacts.
-    // We MUST include myJid in EVERY chunk so WA server considers it a valid sender broadcast.
-    for (let i = CONTACTS_PER_CHUNK; i < allOtherJids.length; i += CONTACTS_PER_CHUNK) {
-        const chunkContacts = allOtherJids.slice(i, i + CONTACTS_PER_CHUNK);
-        const chunk = [myJid, ...chunkContacts];
-        const chunkNum = Math.floor(i / CONTACTS_PER_CHUNK) + 1;
+    // ── Phase 2: Relay to Remaining Contacts ────────────────────────────
+    // We use relayMessage with the exact same msgId so contacts see the identical status.
+    // CRITICAL: We DO NOT include myJid in these chunks! Sending the same msgId key 
+    // to myJid multiple times causes the device to detect protocol spam and hide the status!
+    for (let i = CHUNK_SIZE; i < allOtherJids.length; i += CHUNK_SIZE) {
+        const chunk = allOtherJids.slice(i, i + CHUNK_SIZE);
+        const chunkNum = Math.floor(i / CHUNK_SIZE) + 1;
         
         try {
             console.log(`[${sessionId}] 📤 Relaying chunk ${chunkNum}/${totalChunks} (${chunk.length} recipients)...`);
@@ -793,16 +785,15 @@ async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
                 60000, 
                 `${sessionId}-chunk-${chunkNum}`
             );
-            sent += chunkContacts.length;
+            sent += chunk.length;
             console.log(`[${sessionId}] ✅ Chunk ${chunkNum} broadcasted successfully!`);
         } catch (err) {
-            failed += chunkContacts.length;
+            failed += chunk.length;
             console.error(`[${sessionId}] ⚠️ Chunk ${chunkNum} failed: ${err.message}`);
         }
 
-        if (i + CONTACTS_PER_CHUNK < allOtherJids.length) {
-            // Keep delay low but safe (1s) to process 118 chunks in ~2 mins
-            await new Promise(r => setTimeout(r, 1000));
+        if (i + CHUNK_SIZE < allOtherJids.length) {
+            await new Promise(r => setTimeout(r, 1500));
         }
     }
 
