@@ -753,7 +753,8 @@ async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
         baseMsg = await withTimeout(
             sock.sendMessage('status@broadcast', mediaContent, {
                 statusJidList: chunk1,
-                ephemeralExpiration: WA_STATUS_EXPIRY
+                ephemeralExpiration: WA_STATUS_EXPIRY,
+                broadcast: true
             }),
             120000, 
             `${sessionId}-chunk-1`
