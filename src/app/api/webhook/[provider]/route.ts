@@ -32,7 +32,7 @@ export async function POST(
             return NextResponse.json({ received: true, processed: false });
         }
 
-        // Handle connection status events
+        // Handle connection status events (WAHA format)
         if (parsedEvent.type === 'connection') {
             const status = (parsedEvent.data.status as string) || '';
             const dbStatus = status === 'WORKING' ? 'connected'
@@ -43,6 +43,47 @@ export async function POST(
                 .eq('session_id', parsedEvent.sessionId);
 
             return NextResponse.json({ received: true });
+        }
+
+        // Handle bridge-native session events (from our custom Baileys bridge)
+        // These events come as: { sessionId, event, data }
+        if (payload.event === 'session.connected') {
+            await supabase.from('devices')
+                .update({ status: 'connected', phone_number: payload.data?.phoneNumber || null })
+                .eq('session_id', payload.sessionId || payload.data?.sessionId);
+            return NextResponse.json({ received: true, bridgeEvent: 'connected' });
+        }
+
+        if (payload.event === 'session.disconnected') {
+            await supabase.from('devices')
+                .update({ status: 'disconnected' })
+                .eq('session_id', payload.sessionId || payload.data?.sessionId);
+            return NextResponse.json({ received: true, bridgeEvent: 'disconnected' });
+        }
+
+        if (payload.event === 'session.unhealthy') {
+            // Signal session corrupted — mark as unhealthy so dashboard shows warning
+            await supabase.from('devices')
+                .update({ status: 'unhealthy' })
+                .eq('session_id', payload.sessionId || payload.data?.sessionId);
+            
+            // Generate notification for the user
+            const { data: device } = await supabase
+                .from('devices')
+                .select('tenant_id, name')
+                .eq('session_id', payload.sessionId || payload.data?.sessionId)
+                .single();
+            
+            if (device) {
+                await supabase.from('notifications').insert({
+                    tenant_id: device.tenant_id,
+                    title: `⚠️ Device "${device.name}" Bermasalah`,
+                    message: `Sesi enkripsi rusak (${payload.data?.decryptErrorCount || 0} error). Hapus device dan scan ulang QR code untuk memperbaiki.`,
+                    type: 'device_unhealthy',
+                }).catch(() => {}); // non-fatal
+            }
+            
+            return NextResponse.json({ received: true, bridgeEvent: 'unhealthy' });
         }
 
         // Handle incoming messages

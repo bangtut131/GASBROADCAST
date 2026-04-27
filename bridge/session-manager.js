@@ -97,6 +97,9 @@ export async function createSession(sessionId) {
         socket: null,
         deviceContacts: new Set(contactsArr), // Pre-populated from disk
         qrRetryCount: 0,
+        decryptErrorCount: 0, // Tracks persistent decrypt failures (Signal session corruption)
+        lastDecryptErrorAt: null, // Timestamp of last decrypt error
+        isHealthy: true, // false when session is corrupted
     };
     sessions.set(sessionId, sessionData);
 
@@ -305,6 +308,29 @@ export async function createSession(sessionId) {
 
         // Log ALL events including non-notify types for debugging
         console.log(`[${sessionId}] messages.upsert type=${type} count=${messages.length} fromMe=${messages[0]?.key?.fromMe} from=${messages[0]?.key?.remoteJid}`);
+
+        // Detect undecryptable/stub messages (sign of corrupted Signal session)
+        for (const msg of messages) {
+            const hasContent = msg.message && Object.keys(msg.message).some(k =>
+                !['messageContextInfo', 'senderKeyDistributionMessage'].includes(k)
+            );
+            if (msg.key?.fromMe && !hasContent && msg.key?.remoteJid?.endsWith('@s.whatsapp.net')) {
+                sessionData.decryptErrorCount++;
+                sessionData.lastDecryptErrorAt = Date.now();
+                // After 20 consecutive undecryptable messages, mark session as unhealthy
+                if (sessionData.decryptErrorCount >= 20 && sessionData.isHealthy) {
+                    sessionData.isHealthy = false;
+                    console.error(`[${sessionId}] ❌ SESSION UNHEALTHY: ${sessionData.decryptErrorCount} decrypt failures detected`);
+                    console.error(`[${sessionId}] ❌ Signal Protocol session is corrupted. Device needs re-scan QR.`);
+                    await sendWebhook(sessionId, 'session.unhealthy', {
+                        sessionId,
+                        reason: 'decrypt_errors',
+                        decryptErrorCount: sessionData.decryptErrorCount,
+                        deviceContacts: sessionData.deviceContacts.size,
+                    });
+                }
+            }
+        }
 
         if (type !== 'notify') return;
         for (const msg of messages) {
@@ -887,7 +913,15 @@ function hexToArgb(hex) {
 export function getSession(sessionId) {
     const s = sessions.get(sessionId);
     if (!s) return null;
-    return { sessionId: s.sessionId, status: s.status, phoneNumber: s.phoneNumber, qrAvailable: !!s.qrBase64 };
+    return {
+        sessionId: s.sessionId,
+        status: s.status,
+        phoneNumber: s.phoneNumber,
+        qrAvailable: !!s.qrBase64,
+        isHealthy: s.isHealthy,
+        decryptErrorCount: s.decryptErrorCount || 0,
+        deviceContacts: s.deviceContacts?.size || 0,
+    };
 }
 
 // Returns the full raw session object (including socket, deviceContacts, etc.)

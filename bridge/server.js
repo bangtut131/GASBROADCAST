@@ -54,6 +54,23 @@ app.get('/health', (req, res) => {
     });
 });
 
+// ==================== Per-Session Health Check ====================
+// Returns real-time connection health for a specific session
+// Used by Next.js dashboard to verify if device is truly connected
+app.get('/api/:session/health', auth, (req, res) => {
+    const session = getSession(req.params.session);
+    if (!session) return res.json({ exists: false, status: 'not_found' });
+    res.json({
+        exists: true,
+        sessionId: session.sessionId,
+        status: session.status,
+        phoneNumber: session.phoneNumber,
+        isHealthy: session.isHealthy,
+        decryptErrorCount: session.decryptErrorCount,
+        deviceContacts: session.deviceContacts,
+    });
+});
+
 // ==================== Sessions ====================
 app.get('/api/sessions', auth, (req, res) => {
     res.json({ success: true, data: getAllSessions() });

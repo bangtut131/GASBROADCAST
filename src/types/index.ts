@@ -21,7 +21,7 @@ export interface Profile {
 }
 
 export type WAProviderType = 'waha' | 'official';
-export type DeviceStatus = 'connected' | 'disconnected' | 'qr_pending';
+export type DeviceStatus = 'connected' | 'disconnected' | 'qr_pending' | 'unhealthy';
 
 export interface Device {
   id: string;
