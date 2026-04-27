@@ -198,7 +198,7 @@ export async function createSession(sessionId) {
             defaultQueryTimeoutMs: 180_000,   // 3 min — prevents "Timed Out" on 100+ contact statusJidList
             keepAliveIntervalMs: 30000,
             retryRequestDelayMs: 2000,
-            syncFullHistory: false,
+            syncFullHistory: true,  // CRITICAL: must be true to sync device contacts for status posting
             markOnlineOnConnect: false,
             shouldSyncHistoryMessage: () => true,
             // Required for Signal Protocol session renegotiation (fixes "Bad MAC" / only 1 message per session)
@@ -478,16 +478,31 @@ export async function createSession(sessionId) {
     });
 
     // Also collect contacts from history sync (covers initial connection)
-    sock.ev.on('messaging-history.set', ({ contacts: historyContacts }) => {
+    sock.ev.on('messaging-history.set', ({ contacts: historyContacts, chats: historyChats, messages: historyMessages }) => {
+        let newContacts = 0;
         if (historyContacts) {
             for (const contact of historyContacts) {
                 if (contact.id && contact.id.endsWith('@s.whatsapp.net')) {
+                    if (!sessionData.deviceContacts.has(contact.id)) newContacts++;
                     sessionData.deviceContacts.add(contact.id);
                 }
+                // Also resolve LID → JID mapping
+                const cLid = contact.lid || (contact.id?.endsWith('@lid') ? contact.id : null);
+                const cJid = contact.id?.endsWith('@s.whatsapp.net') ? contact.id : null;
+                if (cLid && cJid) lidStore.set(cLid, cJid);
             }
-            console.log(`[${sessionId}] messaging-history.set: ${sessionData.deviceContacts.size} total device contacts`);
-            scheduleContactsSave();
         }
+        // Extract contacts from chat history (chats with @s.whatsapp.net)
+        if (historyChats) {
+            for (const chat of historyChats) {
+                if (chat.id && chat.id.endsWith('@s.whatsapp.net')) {
+                    if (!sessionData.deviceContacts.has(chat.id)) newContacts++;
+                    sessionData.deviceContacts.add(chat.id);
+                }
+            }
+        }
+        console.log(`[${sessionId}] messaging-history.set: +${newContacts} new, ${sessionData.deviceContacts.size} total device contacts (from ${historyContacts?.length || 0} contacts + ${historyChats?.length || 0} chats)`);
+        scheduleContactsSave();
     });
 
     return { status: 'starting', sessionId };
@@ -881,6 +896,21 @@ export function buildStatusJidList(session, extraContacts = []) {
     for (const jid of session.deviceContacts || []) {
         if (!seen.has(jid)) { seen.add(jid); jids.push(jid); }
     }
+
+    // Also try to resolve @lid contacts via LID store
+    // In Baileys v6, many contacts arrive as @lid rather than @s.whatsapp.net
+    const lidStorePath = join(SESSIONS_DIR, session.sessionId, 'lid-store.json');
+    try {
+        if (existsSync(lidStorePath)) {
+            const lidMap = JSON.parse(readFileSync(lidStorePath, 'utf8'));
+            for (const [lid, jid] of Object.entries(lidMap)) {
+                if (typeof jid === 'string' && jid.endsWith('@s.whatsapp.net') && !seen.has(jid)) {
+                    seen.add(jid);
+                    jids.push(jid);
+                }
+            }
+        }
+    } catch { /* lid store read failure is non-fatal */ }
 
     // Extra contacts (fallback — normally empty in native mode)
     for (const c of extraContacts) {
