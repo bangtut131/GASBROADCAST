@@ -248,6 +248,12 @@ export async function createSession(sessionId) {
 
             console.log(`[${sessionId}] Closed. Code: ${statusCode}. Reconnect: ${shouldReconnect}`);
 
+            // Don't reconnect if session was intentionally deleted
+            if (sessionData._deleted) {
+                console.log(`[${sessionId}] ⛔ Not reconnecting — session was deleted`);
+                return;
+            }
+
             // Don't reconnect if QR timed out (zombie prevention)
             if (sessionData.status === 'qr_timeout') {
                 console.log(`[${sessionId}] ⛔ Not reconnecting — QR timeout (zombie prevention)`);
@@ -460,7 +466,11 @@ export async function createSession(sessionId) {
             const cJid = contact.id?.endsWith('@s.whatsapp.net') ? contact.id : null;
             if (cLid && cJid) lidStore.set(cLid, cJid);
         }
-        console.log(`[${sessionId}] contacts.upsert: ${sessionData.deviceContacts.size} total device contacts`);
+        const count = sessionData.deviceContacts.size;
+        // Only log every 100 contacts to avoid Railway rate limit (500 logs/sec)
+        if (count <= 10 || count % 100 === 0) {
+            console.log(`[${sessionId}] contacts.upsert: ${count} total device contacts`);
+        }
         scheduleContactsSave();
     });
 
@@ -514,8 +524,13 @@ export async function createSession(sessionId) {
  */
 export async function deleteSession(sessionId) {
     const session = sessions.get(sessionId);
-    if (session?.socket) {
-        try { session.socket.end(undefined); } catch { }
+    if (session) {
+        // Mark as deleted BEFORE closing socket to prevent reconnect handler
+        session._deleted = true;
+        if (session.socket) {
+            try { session.socket.end(undefined); } catch { }
+            try { session.socket.ws?.close(); } catch { }
+        }
     }
     sessions.delete(sessionId);
     const dir = join(SESSIONS_DIR, sessionId);

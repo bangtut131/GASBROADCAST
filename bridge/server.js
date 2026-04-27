@@ -8,6 +8,9 @@ process.on('unhandledRejection', (reason) => {
 
 import express from 'express';
 import cors from 'cors';
+import { existsSync, rmSync, readdirSync, statSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import {
     createSession, deleteSession,
     sendText, sendImage, sendVideo,
@@ -21,9 +24,11 @@ import {
     distributeToContactBatches,
 } from './session-manager.js';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3002;
 const API_SECRET = process.env.API_SECRET || 'bridge-secret';
+const SESSIONS_DIR = process.env.SESSIONS_DIR || join(__dirname, 'sessions');
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -137,6 +142,7 @@ app.post('/api/sessions/:name/stop', auth, async (req, res) => {
 });
 
 // Cleanup orphaned sessions — delete sessions on disk that are NOT in the provided valid list
+// SAFETY: Never deletes sessions that are currently connected (to prevent killing active sessions)
 app.post('/api/sessions/cleanup', auth, async (req, res) => {
     try {
         const { validSessionIds } = req.body; // array of session IDs that should exist
@@ -144,19 +150,49 @@ app.post('/api/sessions/cleanup', auth, async (req, res) => {
             return res.status(400).json({ error: 'validSessionIds array required' });
         }
         const validSet = new Set(validSessionIds);
+        
+        // Clean in-memory sessions that are orphaned AND not connected
         const allBridge = getAllSessions();
-        const orphans = allBridge.filter(s => !validSet.has(s.sessionId));
+        const orphans = allBridge.filter(s => 
+            !validSet.has(s.sessionId) && s.status !== 'connected'
+        );
+        const skippedConnected = allBridge.filter(s => 
+            !validSet.has(s.sessionId) && s.status === 'connected'
+        );
         
         for (const orphan of orphans) {
-            console.log(`[Bridge] 🧹 Cleaning orphaned session: ${orphan.sessionId}`);
+            console.log(`[Bridge] 🧹 Cleaning orphaned session: ${orphan.sessionId} (status: ${orphan.status})`);
             await deleteSession(orphan.sessionId);
         }
         
-        console.log(`[Bridge] Cleanup done: ${orphans.length} orphans removed, ${validSessionIds.length} valid sessions kept`);
+        for (const s of skippedConnected) {
+            console.log(`[Bridge] ⚠️ Skipping orphan ${s.sessionId} — still CONNECTED (phone: ${s.phoneNumber})`);
+        }
+        
+        // Also clean disk-only sessions (folders on disk not loaded in memory)
+        const SKIP_DIRS = new Set(['lost+found', '.lost+found', 'tmp', '.DS_Store']);
+        const allBridgeIds = new Set(allBridge.map(s => s.sessionId));
+        let diskCleaned = 0;
+        if (existsSync(SESSIONS_DIR)) {
+            const dirs = readdirSync(SESSIONS_DIR).filter(d => {
+                if (SKIP_DIRS.has(d) || d.startsWith('.')) return false;
+                try { return statSync(join(SESSIONS_DIR, d)).isDirectory(); } catch { return false; }
+            });
+            for (const dir of dirs) {
+                // Skip if valid or already in memory (handled above)
+                if (validSet.has(dir) || allBridgeIds.has(dir)) continue;
+                console.log(`[Bridge] 🧹 Cleaning disk-only orphan: ${dir}`);
+                try { rmSync(join(SESSIONS_DIR, dir), { recursive: true, force: true }); } catch {}
+                diskCleaned++;
+            }
+        }
+        
+        console.log(`[Bridge] Cleanup: ${orphans.length} memory + ${diskCleaned} disk orphans removed, ${skippedConnected.length} connected skipped, ${validSessionIds.length} valid`);
         res.json({ 
             success: true, 
-            cleaned: orphans.length, 
+            cleaned: orphans.length + diskCleaned, 
             kept: validSessionIds.length,
+            skippedConnected: skippedConnected.map(s => ({ id: s.sessionId, phone: s.phoneNumber })),
             orphanIds: orphans.map(o => o.sessionId),
         });
     } catch (err) {
