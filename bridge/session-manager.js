@@ -730,30 +730,72 @@ async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
     const myJid = allJids[0];
     const allOtherJids = allJids.slice(1);
 
-    // Historically proven code from April 1st that successfully delivered to all contacts
-    const CHUNK_SIZE = 25; // Safe size to prevent timeout but not too small
-    const totalChunks = Math.ceil(allJids.length / CHUNK_SIZE) || 1;
-
-    console.log(`[${sessionId}] 📤 Uploading media and sending status to ${allJids.length} contacts + self in ${totalChunks} chunks of ${CHUNK_SIZE}...`);
-    
+    const CHUNK_SIZE = 25; // Proven safe chunk size from April 1st
     let sent = 0;
     let failed = 0;
 
+    // ══════════════════════════════════════════════════════════════════════
+    // PHASE 0: Self-Registration via sendMessage (HIGH LEVEL)
+    // ──────────────────────────────────────────────────────────────────────
+    // WHY: relayMessage (used for contacts) is LOW-LEVEL — it does NOT
+    // trigger Baileys' messages.upsert event, so the sender's phone
+    // never knows the status was posted → "Status Saya" stays empty.
+    //
+    // sendMessage is HIGH-LEVEL — it uploads media, generates the proto,
+    // writes to the local message store, AND fires messages.upsert.
+    // This is what makes the phone display "Status Saya".
+    //
+    // We send to [myJid] ONLY (1 recipient = instant, no timeout risk).
+    // ══════════════════════════════════════════════════════════════════════
+    let selfMsg = null;
     try {
-        const { prepareWAMessageMedia, generateWAMessageFromContent } = await import('@whiskeysockets/baileys');
-        
+        console.log(`[${sessionId}] 📤 Phase 0: Self-registration (sendMessage to self only)...`);
+        selfMsg = await withTimeout(
+            sock.sendMessage('status@broadcast', mediaContent, {
+                statusJidList: [myJid],
+                ephemeralExpiration: 86400,
+            }),
+            30000,
+            `${sessionId}-self`
+        );
+        sent += 1;
+        console.log(`[${sessionId}] ✅ Phase 0: Status registered on device! (msgId: ${selfMsg?.key?.id})`);
+    } catch (err) {
+        failed += 1;
+        console.error(`[${sessionId}] ⚠️ Phase 0 self-registration failed: ${err.message}`);
+        // Continue anyway — contacts can still receive via relay below
+    }
+
+    // If no contacts to send to, we're done
+    if (allOtherJids.length === 0) {
+        return { sent, failed, total: allJids.length };
+    }
+
+    // Small delay to let self-registration propagate on WA servers
+    await new Promise(r => setTimeout(r, 2000));
+
+    // ══════════════════════════════════════════════════════════════════════
+    // PHASE 1: Contact Broadcast via relayMessage (LOW LEVEL, PROVEN)
+    // ──────────────────────────────────────────────────────────────────────
+    // This is the EXACT April 1st logic that delivered to ALL contacts.
+    // prepareWAMessageMedia → generateWAMessageFromContent → relayMessage
+    // Uses a SINGLE CDN upload, then relays the same proto to all contacts.
+    // myJid is NOT included here (already handled in Phase 0).
+    // ══════════════════════════════════════════════════════════════════════
+    const totalChunks = Math.ceil(allOtherJids.length / CHUNK_SIZE) || 1;
+    console.log(`[${sessionId}] 📤 Phase 1: Broadcasting to ${allOtherJids.length} contacts in ${totalChunks} chunks of ${CHUNK_SIZE}...`);
+
+    try {
         // Step 1: Upload media to WA CDN (ONCE)
         const mediaMsg = await prepareWAMessageMedia(mediaContent, { upload: sock.waUploadToServer });
     
-        // Step 2: Build message content with caption and ARGB
+        // Step 2: Build message content with caption
         const msgContent = {};
         if (mediaMsg.imageMessage) {
             msgContent.imageMessage = { ...mediaMsg.imageMessage };
-            msgContent.imageMessage.backgroundArgb = 4278190080;
             if (mediaContent.caption) msgContent.imageMessage.caption = mediaContent.caption;
         } else if (mediaMsg.videoMessage) {
             msgContent.videoMessage = { ...mediaMsg.videoMessage };
-            msgContent.videoMessage.backgroundArgb = 4278190080;
             if (mediaContent.caption) msgContent.videoMessage.caption = mediaContent.caption;
         }
     
@@ -762,9 +804,9 @@ async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
             userJid: sock.user.id,
         });
 
-        // Step 4: Relay in chunks
-        for (let i = 0; i < allJids.length; i += CHUNK_SIZE) {
-            const chunk = allJids.slice(i, i + CHUNK_SIZE);
+        // Step 4: Relay to contacts in chunks (NOT including myJid)
+        for (let i = 0; i < allOtherJids.length; i += CHUNK_SIZE) {
+            const chunk = allOtherJids.slice(i, i + CHUNK_SIZE);
             const chunkNum = Math.floor(i / CHUNK_SIZE) + 1;
             
             try {
@@ -778,20 +820,21 @@ async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
                     `${sessionId}-chunk-${chunkNum}`
                 );
                 sent += chunk.length;
-                console.log(`[${sessionId}] ✅ Chunk ${chunkNum} broadcasted successfully!`);
+                console.log(`[${sessionId}] ✅ Chunk ${chunkNum}/${totalChunks} broadcasted successfully!`);
             } catch (err) {
                 failed += chunk.length;
-                console.error(`[${sessionId}] ⚠️ Chunk ${chunkNum} failed: ${err.message}`);
+                console.error(`[${sessionId}] ⚠️ Chunk ${chunkNum}/${totalChunks} failed: ${err.message}`);
             }
             
-            if (i + CHUNK_SIZE < allJids.length) {
+            if (i + CHUNK_SIZE < allOtherJids.length) {
                 await new Promise(r => setTimeout(r, 1000));
             }
         }
     } catch (err) {
-        console.error(`[${sessionId}] ❌ Failed to prepare/send status: ${err.message}`);
+        console.error(`[${sessionId}] ❌ Failed to prepare/relay status: ${err.message}`);
     }
 
+    console.log(`[${sessionId}] 📊 Result: ${sent} sent, ${failed} failed out of ${allJids.length}`);
     return { sent, failed, total: allJids.length };
 }
 
