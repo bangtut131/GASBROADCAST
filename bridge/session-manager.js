@@ -279,6 +279,11 @@ export async function createSession(sessionId) {
             sessionData.qrRetryCount = 0; // Reset QR counter on successful connect
             sessionData.phoneNumber = user?.id ? user.id.split(':')[0] : null;
             console.log(`[${sessionId}] ✅ Connected! +${sessionData.phoneNumber}`);
+            console.log(`[${sessionId}] 📇 Device contacts loaded: ${sessionData.deviceContacts.size} (from disk cache)`);
+            if (sessionData.deviceContacts.size === 0) {
+                console.warn(`[${sessionId}] ⚠️ WARNING: 0 device contacts! Waiting for contacts.upsert/messaging-history.set sync...`);
+                console.warn(`[${sessionId}] ⚠️ If contacts stay at 0, the Signal session may be corrupted. Re-scan QR to fix.`);
+            }
             await sendWebhook(sessionId, 'session.connected', {
                 sessionId,
                 phoneNumber: sessionData.phoneNumber,
@@ -858,6 +863,13 @@ export function buildStatusJidList(session, extraContacts = []) {
     }
 
     console.log(`[${session.sessionId}] Status JID list: ${jids.length} total (${session.deviceContacts?.size || 0} device contacts + self, native mode)`);
+    if (jids.length <= 1) {
+        console.error(`[${session.sessionId}] ❌ CRITICAL: Status will be posted to SELF ONLY (0 device contacts)!`);
+        console.error(`[${session.sessionId}] ❌ This means NO ONE can see your status. You need to:`);
+        console.error(`[${session.sessionId}]   1. Delete this device session from the dashboard`);
+        console.error(`[${session.sessionId}]   2. Re-scan QR code to create fresh Signal sessions`);
+        console.error(`[${session.sessionId}]   3. Wait for contacts sync (messaging-history.set event)`);
+    }
     return jids;
 }
 
