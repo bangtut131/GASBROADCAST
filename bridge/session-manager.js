@@ -735,50 +735,60 @@ async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
 
     // The native WA broadcast limit is 256. We chunk at 250 to be safe.
     const CHUNK_MAX = 250;
-    const totalChunks = Math.ceil(allOtherJids.length / CHUNK_MAX) || 1;
+    const totalChunks = Math.ceil(allJids.length / CHUNK_MAX) || 1;
 
     console.log(`[${sessionId}] 📤 Sending status to ${allOtherJids.length} contacts + self in ${totalChunks} chunks of ${CHUNK_MAX}...`);
     
-    console.log(`[${sessionId}] ⬆️ Uploading media to WhatsApp CDN...`);
-    const mediaMsg = await prepareWAMessageMedia(mediaContent, { upload: sock.waUploadToServer });
-    
-    const msgContent = {};
-    if (mediaMsg.imageMessage) {
-        msgContent.imageMessage = { ...mediaMsg.imageMessage };
-        if (mediaContent.caption) msgContent.imageMessage.caption = mediaContent.caption;
-    } else if (mediaMsg.videoMessage) {
-        msgContent.videoMessage = { ...mediaMsg.videoMessage };
-        if (mediaContent.caption) msgContent.videoMessage.caption = mediaContent.caption;
+    // Chunk 1 MUST include myJid and will be sent via sendMessage.
+    // This guarantees the status is synced to the sender's phone ("Status Saya")
+    // and correctly generates the media message structure and message ID.
+    const chunk1 = allJids.slice(0, CHUNK_MAX); // myJid is always at index 0
+    let baseMsg = null;
+
+    try {
+        console.log(`[${sessionId}] 📤 Phase 1: Sending core broadcast (Chunk 1/1) to ${chunk1.length} recipients (including self)...`);
+        baseMsg = await withTimeout(
+            sock.sendMessage('status@broadcast', mediaContent, {
+                statusJidList: chunk1,
+                ephemeralExpiration: WA_STATUS_EXPIRY
+            }),
+            120000, 
+            `${sessionId}-chunk-1`
+        );
+        // We count chunk1 length minus 1 so we don't double count myJid
+        sent += chunk1.length - 1;
+        console.log(`[${sessionId}] ✅ Chunk 1 broadcasted successfully!`);
+    } catch (err) {
+        failed += chunk1.length - 1;
+        console.error(`[${sessionId}] ❌ Chunk 1 failed critically: ${err.message}`);
+        // If Chunk 1 fails, we cannot relay the others because we don't have a valid base message ID
+        return { sent, failed, total: allJids.length };
     }
 
-    const msg = generateWAMessageFromContent('status@broadcast', msgContent, {
-        userJid: sock.user.id,
-        ephemeralExpiration: WA_STATUS_EXPIRY,
-    });
-
-    for (let i = 0; i < allOtherJids.length; i += CHUNK_MAX) {
-        // ALWAYS include myJid in EVERY chunk so the host device sees it and WA registers it as a valid broadcast
-        const chunk = [myJid, ...allOtherJids.slice(i, i + CHUNK_MAX)];
+    // Remaining chunks use relayMessage with the exact same msgId and payload.
+    // This implements "device fanout", delivering the exact same status to the rest of the contacts.
+    for (let i = CHUNK_MAX; i < allJids.length; i += CHUNK_MAX) {
+        const chunk = allJids.slice(i, i + CHUNK_MAX);
         const chunkNum = Math.floor(i / CHUNK_MAX) + 1;
         
         try {
             console.log(`[${sessionId}] 📤 Relaying chunk ${chunkNum}/${totalChunks} (${chunk.length} recipients)...`);
             await withTimeout(
-                sock.relayMessage('status@broadcast', msg.message, {
-                    messageId: msg.key.id,
+                sock.relayMessage('status@broadcast', baseMsg.message, {
+                    messageId: baseMsg.key.id,
                     statusJidList: chunk,
                 }),
                 120000, 
                 `${sessionId}-chunk-${chunkNum}`
             );
-            sent += chunk.length - 1; // don't double count myJid
+            sent += chunk.length;
             console.log(`[${sessionId}] ✅ Chunk ${chunkNum} broadcasted successfully!`);
         } catch (err) {
-            failed += chunk.length - 1;
+            failed += chunk.length;
             console.error(`[${sessionId}] ⚠️ Chunk ${chunkNum} failed: ${err.message}`);
         }
 
-        if (i + CHUNK_MAX < allOtherJids.length) {
+        if (i + CHUNK_MAX < allJids.length) {
             await new Promise(r => setTimeout(r, 2000));
         }
     }
