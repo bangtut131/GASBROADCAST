@@ -729,26 +729,38 @@ async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
     const myJid = allJids[0];
     const contactJids = allJids.slice(1); // all contacts except self
 
+    // Build self JID list: include BOTH @s.whatsapp.net AND @lid format
+    // This ensures the status syncs back to the primary device (phone)
+    // Linked device status often doesn't show on primary without LID
+    const selfJids = [myJid];
+    const myLid = sock.user?.lid;
+    if (myLid && !selfJids.includes(myLid)) {
+        selfJids.push(myLid);
+        console.log(`[${sessionId}] Self JIDs: ${myJid} + LID ${myLid}`);
+    } else {
+        console.log(`[${sessionId}] Self JID: ${myJid} (no LID available)`);
+    }
+
     let sent = 0;
     let failed = 0;
     let selfRegistered = false;
 
-    // ── STEP 1: Self-registration — ALWAYS send to myJid ALONE first ─────
+    // ── STEP 1: Self-registration — ALWAYS send to self ALONE first ─────
     // This guarantees the status appears on the sender's device ("Status Saya")
-    // even if all contact batches fail. Using only 1 JID = fast, no timeout risk.
-    const SELF_TIMEOUT = 30_000; // 30s is plenty for 1 JID
+    // even if all contact batches fail. Using only self JIDs = fast, no timeout risk.
+    const SELF_TIMEOUT = 30_000; // 30s is plenty for 1-2 JIDs
     for (let attempt = 1; attempt <= INITIAL_POST_RETRIES; attempt++) {
         try {
             await withTimeout(
                 sock.sendMessage('status@broadcast', mediaContent, {
-                    statusJidList: [myJid],
+                    statusJidList: selfJids,
                 }),
                 SELF_TIMEOUT,
                 `${sessionId}-self-attempt${attempt}`
             );
-            sent += 1;
+            sent += selfJids.length;
             selfRegistered = true;
-            console.log(`[${sessionId}] ✅ Self-registration OK — status visible on sender's device (attempt ${attempt})`);
+            console.log(`[${sessionId}] ✅ Self-registration OK — sent to ${selfJids.length} self JIDs (attempt ${attempt})`);
             break;
         } catch (err) {
             console.error(`[${sessionId}] ⚠️ Self-registration attempt ${attempt}/${INITIAL_POST_RETRIES} failed: ${err.message}`);
