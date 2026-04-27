@@ -733,14 +733,31 @@ async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
     let sent = 0;
     let failed = 0;
 
-    console.log(`[${sessionId}] 📤 Sending status to all ${allJids.length} contacts at once...`);
+    console.log(`[${sessionId}] 📤 Sending status via low-level relayMessage to bypass 6.7.21 bugs...`);
     let sentMsg;
     try {
+        console.log(`[${sessionId}] ⬆️ Uploading media to WhatsApp CDN...`);
+        const mediaMsg = await prepareWAMessageMedia(mediaContent, { upload: sock.waUploadToServer });
+        
+        const msgContent = {};
+        if (mediaMsg.imageMessage) {
+            msgContent.imageMessage = { ...mediaMsg.imageMessage };
+            if (mediaContent.caption) msgContent.imageMessage.caption = mediaContent.caption;
+        } else if (mediaMsg.videoMessage) {
+            msgContent.videoMessage = { ...mediaMsg.videoMessage };
+            if (mediaContent.caption) msgContent.videoMessage.caption = mediaContent.caption;
+        }
+
+        const msg = generateWAMessageFromContent('status@broadcast', msgContent, {
+            userJid: sock.user.id,
+            ephemeralExpiration: WA_STATUS_EXPIRY,
+        });
+
+        console.log(`[${sessionId}] 📤 Relaying payload to ${allJids.length} contacts...`);
         sentMsg = await withTimeout(
-            sock.sendMessage('status@broadcast', mediaContent, {
+            sock.relayMessage('status@broadcast', msg.message, {
+                messageId: msg.key.id,
                 statusJidList: allJids,
-                ephemeralExpiration: WA_STATUS_EXPIRY,
-                broadcast: true,
                 additionalAttributes: { broadcast: 'true' }
             }),
             120000, // 2 minutes timeout for large encryption
