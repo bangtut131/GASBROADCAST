@@ -730,7 +730,7 @@ async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
     const myJid = allJids[0];
     const allOtherJids = allJids.slice(1);
 
-    const CHUNK_SIZE = 25; // Proven safe chunk size from April 1st
+    const CHUNK_SIZE = 10; // Proven safe chunk size (reduced from 25 for anti-spam)
     let sent = 0;
     let failed = 0;
 
@@ -831,7 +831,9 @@ async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
             }
             
             if (i + CHUNK_SIZE < allOtherJids.length) {
-                await new Promise(r => setTimeout(r, 1000));
+                // Random delay between 3000ms and 6000ms to avoid pattern detection
+                const randomDelay = Math.floor(Math.random() * 3000) + 3000;
+                await new Promise(r => setTimeout(r, randomDelay));
             }
         }
     } catch (err) {
