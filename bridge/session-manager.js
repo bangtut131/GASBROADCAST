@@ -804,10 +804,14 @@ async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
             userJid: sock.user.id,
         });
 
-        // Step 4: Relay to contacts in chunks (NOT including myJid)
+        // Step 4: Relay to contacts in chunks
+        // Include myJid in chunk 1 so sender's phone also gets the relay
+        // (sendMessage Phase 0 alone doesn't always register on device after fresh QR)
         for (let i = 0; i < allOtherJids.length; i += CHUNK_SIZE) {
             const chunk = allOtherJids.slice(i, i + CHUNK_SIZE);
             const chunkNum = Math.floor(i / CHUNK_SIZE) + 1;
+            // Prepend myJid to first chunk so sender sees status via relay too
+            if (chunkNum === 1) chunk.unshift(myJid);
             
             try {
                 console.log(`[${sessionId}] 📤 Relaying chunk ${chunkNum}/${totalChunks} (${chunk.length} recipients)...`);
