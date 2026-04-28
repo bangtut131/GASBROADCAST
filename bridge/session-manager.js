@@ -662,7 +662,7 @@ const WA_STATUS_EXPIRY = 86400;    // 24 hours — WhatsApp status/story ephemer
 
 async function downloadMedia(url) {
     const res = await fetch(url);
-    if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+    if (!res.ok) throw new Error(`Download failed: ${res.status} — ${url.substring(0, 120)}`);
     return Buffer.from(await res.arrayBuffer());
 }
 

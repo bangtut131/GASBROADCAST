@@ -170,28 +170,10 @@ export async function POST(request: NextRequest) {
                 }
                 await supabase.from('status_schedules').update(schedUpdates).eq('id', schedule.id);
 
-                // === Storage cleanup: delete the media file after posting ===
-                // The bridge downloads the file when we send the batch request,
-                // so we can safely delete the Supabase Storage copy after a short delay.
-                // The content_url in DB stays (points to deleted file), but that's OK
-                // because wa-status files are temporary by nature.
-                if (content.storage_path || content.content_url?.includes('/storage/v1/object/public/wa-status/')) {
-                    const storagePath = content.storage_path ||
-                        content.content_url.split('/storage/v1/object/public/wa-status/')[1];
-                    if (storagePath) {
-                        // Fire-and-forget: delete from storage after 60s delay
-                        // (give bridge time to download the file first)
-                        setTimeout(async () => {
-                            try {
-                                const delClient = await createServiceClient();
-                                await delClient.storage.from('wa-status').remove([decodeURIComponent(storagePath)]);
-                                console.log(`[wa-status/post] 🗑️ Cleaned up storage: ${storagePath}`);
-                            } catch (delErr: any) {
-                                console.warn(`[wa-status/post] Storage cleanup failed (non-fatal): ${delErr.message}`);
-                            }
-                        }, 60_000);
-                    }
-                }
+                // NOTE: wa-status files are NOT auto-deleted after posting.
+                // They are small, reusable across schedules, and deleting them
+                // causes HTTP 400 failures when the same content is used later.
+                // Storage cleanup targets inbox media (the real bandwidth hog), not wa-status.
 
                 return NextResponse.json({
                     success: true,
