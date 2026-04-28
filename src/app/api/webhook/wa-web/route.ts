@@ -226,7 +226,7 @@ export async function POST(request: NextRequest) {
                         try {
                             const { compressImageBuffer } = await import('@/lib/image-compress');
                             const compressed = await compressImageBuffer(buffer, mimeType, { maxSizeKB: 300 });
-                            buffer = compressed.buffer;
+                            buffer = Buffer.from(compressed.buffer);
                             mimeType = compressed.mimeType;
                         } catch (compressErr: any) {
                             console.warn('[Webhook wa-web] Image compression skipped:', compressErr.message);

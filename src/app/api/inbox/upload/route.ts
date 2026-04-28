@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
             try {
                 const { compressImageBuffer } = await import('@/lib/image-compress');
                 const compressed = await compressImageBuffer(buffer, file.type, { maxSizeKB: 300 });
-                buffer = compressed.buffer;
+                buffer = Buffer.from(compressed.buffer);
                 uploadMimeType = compressed.mimeType;
             } catch (compressErr: any) {
                 console.warn('[Upload] Image compression skipped:', compressErr.message);
