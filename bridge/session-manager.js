@@ -831,7 +831,8 @@ async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
             }
             
             if (i + CHUNK_SIZE < allOtherJids.length) {
-                await new Promise(r => setTimeout(r, 1000));
+                // 2.5s delay between chunks to avoid spam detection
+                await new Promise(r => setTimeout(r, 2500));
             }
         }
     } catch (err) {
