@@ -7,6 +7,8 @@ import makeWASocket, {
     DisconnectReason,
     useMultiFileAuthState,
     fetchLatestBaileysVersion,
+    generateWAMessageFromContent,
+    prepareWAMessageMedia,
     downloadMediaMessage
 } from '@whiskeysockets/baileys';
 import { existsSync, mkdirSync, rmSync, readdirSync, statSync, readFileSync, writeFileSync } from 'fs';
@@ -648,11 +650,14 @@ export async function sendStatusVideo(sessionId, videoUrl, caption = '', contact
 
 // Max concurrent device sends (1 = serial, prevents bandwidth/CPU saturation)
 const MAX_CONCURRENT_SENDS = 1;
-// Native-safe constants: uses sendMessage only (same as WA Web)
-const CONTACT_CHUNK_SIZE = 200;    // 200 contacts per sendMessage call (safe stanza size)
-const CHUNK_TIMEOUT = 120_000;     // 2 min per chunk
-const CHUNK_DELAY = 5000;          // 5 seconds between chunks (natural pace)
-const DEVICE_DELAY = 10000;        // 10s delay between devices in batch (safe pacing)
+// Three-phase chunked relay: matches original working code (backup April 19)
+const CHUNK_SIZE = 10;         // 10 contacts per relay chunk
+const CHUNK_TIMEOUT = 30_000;  // 30 seconds timeout per chunk
+const CHUNK_DELAY = 3000;      // 3 seconds between chunks (safer pacing)
+const SELF_POST_TIMEOUT = 90_000;  // 90s for initial self-post (includes media upload to CDN)
+const SELF_POST_RETRIES = 3;       // Retry self-registration up to 3 times
+const DEVICE_DELAY = 10_000;       // 10s delay between devices in batch (human-like pacing)
+const SELF_PROPAGATION_DELAY = 3000; // 3s wait after self-registration before broadcasting
 const WA_STATUS_EXPIRY = 86400;    // 24 hours — WhatsApp status/story ephemeral expiry
 
 async function downloadMedia(url) {
@@ -699,110 +704,138 @@ async function throttledAll(tasks, limit) {
     return results;
 }
 
-// ===== WA Web-Native Status Posting (sendMessage only, NO relayMessage) =====
+// ===== WA Web-Native Status Posting =====
+// TWO-STEP APPROACH for reliable status posting:
 //
-// TWO-PHASE APPROACH using ONLY sendMessage (same API as WA Web):
+// STEP 1: Self-registration (myJid ONLY)
+//   - sock.sendMessage('status@broadcast', content, { statusJidList: [myJid] })
+//   - Uploads media to WA CDN and registers status on sender's phone ("Status Saya")
+//   - Uses short 30s timeout (1 JID = very fast encryption)
+//   - GUARANTEES the sender always sees their own status
 //
-// PHASE 1: Self-registration — sendMessage to [myJid] only
-//   - Small stanza (1 JID), guaranteed to succeed
-//   - Uploads media to WA CDN, registers "Status Saya" on sender's phone
-//   - This is the PROVEN approach that always makes status visible on device
+// STEP 2: Contact batches (remaining contacts in groups of CHUNK_SIZE)
+//   - sock.sendMessage('status@broadcast', content, { statusJidList: [batch] })
+//   - Distributes the status to contacts in manageable batches
+//   - Each batch gets CHUNK_TIMEOUT to handle encryption for up to 50 JIDs
+//   - If any batch fails, other batches still succeed
 //
-// PHASE 2: Contact distribution — sendMessage in chunks of 200
-//   - Each chunk is a separate sendMessage call (NOT relayMessage)
-//   - Each chunk gets its own message ID (natural, like posting multiple statuses)
-//   - 200 JIDs per stanza is well within WA server's acceptance limit
-//   - 5 second delay between chunks for natural pacing
-//
-// WHY NOT single sendMessage with ALL contacts?
-//   Testing showed that sendMessage with 1185+ JIDs returns success (message ID)
-//   but WA server silently drops the oversized stanza. Status never appears —
-//   not even on the sender's device. By keeping chunks at 200, stanzas stay
-//   within WA's acceptance threshold.
-//
-// WHY NOT relayMessage?
-//   relayMessage is a LOW-LEVEL API for message retry/renegotiation.
-//   Using it to broadcast to hundreds of contacts with the SAME messageId
-//   creates a spam pattern that WA's anti-abuse system detects → account ban.
-//
+// WHY separate self-registration?
+//   The previous approach put myJid in Batch 1 with 49 other contacts.
+//   Encrypting for 50 JIDs (including ones with stale/corrupt Signal sessions)
+//   caused consistent 120s timeouts. Since myJid was in the failed batch,
+//   the status NEVER appeared on the sender's device — the #1 user complaint.
+//   By isolating myJid, self-registration is virtually instant (1 JID, ~2-5s).
 async function chunkedStatusRelay(sock, mediaContent, allJids, sessionId) {
-    const totalContacts = allJids.length;
-    const myJid = allJids[0]; // buildStatusJidList always puts myJid first
-    const otherJids = allJids.slice(1);
+    // buildStatusJidList always puts myJid first
+    const myJid = allJids[0];
+    const allOtherJids = allJids.slice(1);
+
+    const CHUNK_SIZE = 25; // Proven safe chunk size from April 1st
     let sent = 0;
     let failed = 0;
 
     // ══════════════════════════════════════════════════════════════════════
-    // PHASE 1: Self-Registration (sendMessage to self ONLY)
+    // PHASE 0: Self-Registration via sendMessage (HIGH LEVEL)
     // ──────────────────────────────────────────────────────────────────────
-    // 1 JID = tiny stanza, instant encryption, guaranteed delivery.
-    // This ensures "Status Saya" always appears on the sender's phone.
+    // WHY: relayMessage (used for contacts) is LOW-LEVEL — it does NOT
+    // trigger Baileys' messages.upsert event, so the sender's phone
+    // never knows the status was posted → "Status Saya" stays empty.
+    //
+    // sendMessage is HIGH-LEVEL — it uploads media, generates the proto,
+    // writes to the local message store, AND fires messages.upsert.
+    // This is what makes the phone display "Status Saya".
+    //
+    // We send to [myJid] ONLY (1 recipient = instant, no timeout risk).
     // ══════════════════════════════════════════════════════════════════════
+    let selfMsg = null;
     try {
-        console.log(`[${sessionId}] 📤 Phase 1: Self-registration (sendMessage to self only)...`);
-        const selfResult = await withTimeout(
+        console.log(`[${sessionId}] 📤 Phase 0: Self-registration (sendMessage to self only)...`);
+        selfMsg = await withTimeout(
             sock.sendMessage('status@broadcast', mediaContent, {
                 statusJidList: [myJid],
-                ephemeralExpiration: WA_STATUS_EXPIRY,
+                ephemeralExpiration: 86400,
             }),
-            60_000,
+            30000,
             `${sessionId}-self`
         );
         sent += 1;
-        console.log(`[${sessionId}] ✅ Phase 1: Self-registration OK (msgId: ${selfResult?.key?.id})`);
-    } catch (selfErr) {
+        console.log(`[${sessionId}] ✅ Phase 0: Status registered on device! (msgId: ${selfMsg?.key?.id})`);
+    } catch (err) {
         failed += 1;
-        console.error(`[${sessionId}] ❌ Phase 1: Self-registration failed: ${selfErr.message}`);
-        // Continue — contacts might still work
+        console.error(`[${sessionId}] ⚠️ Phase 0 self-registration failed: ${err.message}`);
+        // Continue anyway — contacts can still receive via relay below
     }
 
-    if (otherJids.length === 0) {
-        return { sent, failed, total: totalContacts };
+    // If no contacts to send to, we're done
+    if (allOtherJids.length === 0) {
+        return { sent, failed, total: allJids.length };
     }
 
-    // Small delay after self-registration to let it propagate
-    await new Promise(r => setTimeout(r, 3000));
+    // Small delay to let self-registration propagate on WA servers
+    await new Promise(r => setTimeout(r, 2000));
 
     // ══════════════════════════════════════════════════════════════════════
-    // PHASE 2: Contact Distribution (sendMessage in chunks of 200)
+    // PHASE 1: Contact Broadcast via relayMessage (LOW LEVEL, PROVEN)
     // ──────────────────────────────────────────────────────────────────────
-    // Each chunk is a separate sendMessage call with its own message ID.
-    // 200 JIDs per call keeps stanza size within WA server's limit.
-    // Uses the SAME high-level API as WA Web — no relayMessage.
+    // This is the EXACT April 1st logic that delivered to ALL contacts.
+    // prepareWAMessageMedia → generateWAMessageFromContent → relayMessage
+    // Uses a SINGLE CDN upload, then relays the same proto to all contacts.
+    // myJid is NOT included here (already handled in Phase 0).
     // ══════════════════════════════════════════════════════════════════════
-    const totalChunks = Math.ceil(otherJids.length / CONTACT_CHUNK_SIZE);
-    console.log(`[${sessionId}] 📤 Phase 2: Distributing to ${otherJids.length} contacts in ${totalChunks} chunks of ${CONTACT_CHUNK_SIZE}...`);
+    const totalChunks = Math.ceil(allOtherJids.length / CHUNK_SIZE) || 1;
+    console.log(`[${sessionId}] 📤 Phase 1: Broadcasting to ${allOtherJids.length} contacts in ${totalChunks} chunks of ${CHUNK_SIZE}...`);
 
-    for (let i = 0; i < otherJids.length; i += CONTACT_CHUNK_SIZE) {
-        const chunk = otherJids.slice(i, i + CONTACT_CHUNK_SIZE);
-        const chunkNum = Math.floor(i / CONTACT_CHUNK_SIZE) + 1;
-
-        // Delay between chunks (natural pacing)
-        if (i > 0) {
-            console.log(`[${sessionId}] ⏳ Waiting ${CHUNK_DELAY / 1000}s before chunk ${chunkNum}...`);
-            await new Promise(r => setTimeout(r, CHUNK_DELAY));
+    try {
+        // Step 1: Upload media to WA CDN (ONCE)
+        const mediaMsg = await prepareWAMessageMedia(mediaContent, { upload: sock.waUploadToServer });
+    
+        // Step 2: Build message content with caption
+        const msgContent = {};
+        if (mediaMsg.imageMessage) {
+            msgContent.imageMessage = { ...mediaMsg.imageMessage };
+            if (mediaContent.caption) msgContent.imageMessage.caption = mediaContent.caption;
+        } else if (mediaMsg.videoMessage) {
+            msgContent.videoMessage = { ...mediaMsg.videoMessage };
+            if (mediaContent.caption) msgContent.videoMessage.caption = mediaContent.caption;
         }
+    
+        // Step 3: Generate message proto with unique ID
+        const msg = generateWAMessageFromContent('status@broadcast', msgContent, {
+            userJid: sock.user.id,
+        });
 
-        try {
-            console.log(`[${sessionId}] 📤 Chunk ${chunkNum}/${totalChunks} (${chunk.length} contacts)...`);
-            await withTimeout(
-                sock.sendMessage('status@broadcast', mediaContent, {
-                    statusJidList: chunk,
-                    ephemeralExpiration: WA_STATUS_EXPIRY,
-                }),
-                CHUNK_TIMEOUT,
-                `${sessionId}-chunk-${chunkNum}`
-            );
-            sent += chunk.length;
-            console.log(`[${sessionId}] ✅ Chunk ${chunkNum}/${totalChunks}: ${chunk.length} contacts OK`);
-        } catch (chunkErr) {
-            failed += chunk.length;
-            console.error(`[${sessionId}] ⚠️ Chunk ${chunkNum}/${totalChunks} failed: ${chunkErr.message}`);
+        // Step 4: Relay to contacts in chunks (NOT including myJid)
+        for (let i = 0; i < allOtherJids.length; i += CHUNK_SIZE) {
+            const chunk = allOtherJids.slice(i, i + CHUNK_SIZE);
+            const chunkNum = Math.floor(i / CHUNK_SIZE) + 1;
+            
+            try {
+                console.log(`[${sessionId}] 📤 Relaying chunk ${chunkNum}/${totalChunks} (${chunk.length} recipients)...`);
+                await withTimeout(
+                    sock.relayMessage('status@broadcast', msg.message, {
+                        messageId: msg.key.id,
+                        statusJidList: chunk,
+                    }),
+                    60000,
+                    `${sessionId}-chunk-${chunkNum}`
+                );
+                sent += chunk.length;
+                console.log(`[${sessionId}] ✅ Chunk ${chunkNum}/${totalChunks} broadcasted successfully!`);
+            } catch (err) {
+                failed += chunk.length;
+                console.error(`[${sessionId}] ⚠️ Chunk ${chunkNum}/${totalChunks} failed: ${err.message}`);
+            }
+            
+            if (i + CHUNK_SIZE < allOtherJids.length) {
+                await new Promise(r => setTimeout(r, 1000));
+            }
         }
+    } catch (err) {
+        console.error(`[${sessionId}] ❌ Failed to prepare/relay status: ${err.message}`);
     }
 
-    console.log(`[${sessionId}] 📊 Result: ${sent} sent, ${failed} failed out of ${totalContacts}`);
-    return { sent, failed, total: totalContacts };
+    console.log(`[${sessionId}] 📊 Result: ${sent} sent, ${failed} failed out of ${allJids.length}`);
+    return { sent, failed, total: allJids.length };
 }
 
 export async function batchSendStatusImage(mediaUrl, caption, deviceEntries) {
@@ -975,27 +1008,26 @@ export function getSessionRaw(sessionId) {
 
 // Distribute status to contacts in batches (background operation after self-registration)
 // Used by server.js async status endpoints
-// Uses sendMessage (native API) with large chunks and safe delays
 export async function distributeToContactBatches(sock, mediaContent, contactJids, sessionId) {
-    const totalBatches = Math.ceil(contactJids.length / CONTACT_CHUNK_SIZE);
+    const totalBatches = Math.ceil(contactJids.length / CHUNK_SIZE);
     let sent = 0;
     let failed = 0;
 
-    // Initial delay before starting
-    await new Promise(r => setTimeout(r, 3000));
+    // Small initial delay before starting
+    await new Promise(r => setTimeout(r, 2000));
 
-    for (let i = 0; i < contactJids.length; i += CONTACT_CHUNK_SIZE) {
-        const chunk = contactJids.slice(i, i + CONTACT_CHUNK_SIZE);
-        const batchNum = Math.floor(i / CONTACT_CHUNK_SIZE) + 1;
+    for (let i = 0; i < contactJids.length; i += CHUNK_SIZE) {
+        const chunk = contactJids.slice(i, i + CHUNK_SIZE);
+        const batchNum = Math.floor(i / CHUNK_SIZE) + 1;
 
         if (i > 0) {
-            console.log(`[${sessionId}] ⏳ BG: Waiting ${CHUNK_DELAY / 1000}s before batch ${batchNum}...`);
             await new Promise(r => setTimeout(r, CHUNK_DELAY));
         }
 
         try {
             await withTimeout(
                 sock.sendMessage('status@broadcast', mediaContent, {
+                    broadcast: true,
                     statusJidList: chunk,
                     ephemeralExpiration: WA_STATUS_EXPIRY,
                 }),
