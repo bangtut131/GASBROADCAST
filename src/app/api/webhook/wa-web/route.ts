@@ -212,14 +212,25 @@ export async function POST(request: NextRequest) {
             }
 
             // Handle media: upload base64 data URL to Supabase Storage
+            // Images are compressed before upload to save storage space
             let resolvedMediaUrl = payload.mediaUrl || payload.media_url || null;
             if (resolvedMediaUrl && resolvedMediaUrl.startsWith('data:')) {
                 try {
                     const matches = resolvedMediaUrl.match(/^data:([^;]+);base64,(.+)$/);
                     if (matches) {
-                        const mimeType = matches[1];
+                        let mimeType = matches[1];
                         const base64Data = matches[2];
-                        const buffer = Buffer.from(base64Data, 'base64');
+                        let buffer = Buffer.from(base64Data, 'base64');
+
+                        // Compress images before upload to save storage
+                        try {
+                            const { compressImageBuffer } = await import('@/lib/image-compress');
+                            const compressed = await compressImageBuffer(buffer, mimeType, { maxSizeKB: 300 });
+                            buffer = compressed.buffer;
+                            mimeType = compressed.mimeType;
+                        } catch (compressErr: any) {
+                            console.warn('[Webhook wa-web] Image compression skipped:', compressErr.message);
+                        }
                         
                         // Determine extension from mime
                         const extMap: Record<string, string> = {
@@ -241,7 +252,7 @@ export async function POST(request: NextRequest) {
                                 .from('inbox-media')
                                 .getPublicUrl(filePath);
                             resolvedMediaUrl = urlData.publicUrl;
-                            console.log(`[Webhook wa-web] ✅ Media uploaded: ${filePath}`);
+                            console.log(`[Webhook wa-web] ✅ Media uploaded: ${filePath} (${Math.round(buffer.length / 1024)}KB)`);
                         } else {
                             console.error('[Webhook wa-web] Media upload error:', uploadErr.message);
                             resolvedMediaUrl = null;

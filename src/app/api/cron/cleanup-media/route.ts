@@ -4,10 +4,14 @@ import { createServiceClient } from '@/lib/supabase/server';
 /**
  * POST /api/cron/cleanup-media
  * 
- * Auto-cleanup: Hapus file media inbox yang lebih dari 2 hari.
- * Dipanggil oleh cron scheduler (Railway/Vercel/external).
+ * AGGRESSIVE Auto-cleanup to stay within Supabase free tier (1GB storage):
  * 
- * Also handles initial bucket setup if bucket doesn't exist yet.
+ * 1. inbox-media bucket: Hapus file > 6 jam (was 2 days)
+ * 2. wa-status bucket:   Hapus file > 24 jam (NEW — was never cleaned!)
+ * 3. messages table:     Null out media_url on old messages
+ * 
+ * Dipanggil oleh cron scheduler (Railway/Vercel/external).
+ * Rekomendasi: jalankan setiap 1-2 jam.
  * 
  * Headers: x-cron-secret: <CRON_SECRET>
  */
@@ -34,9 +38,15 @@ export async function POST(request: NextRequest) {
         }
 
         const supabase = await createServiceClient();
-        const results = { deleted: 0, errors: 0, bucketCreated: false };
+        const results = {
+            inboxDeleted: 0,
+            statusDeleted: 0,
+            errors: 0,
+            bucketCreated: false,
+            messagesCleared: 0,
+        };
 
-        // === Step 1: Ensure bucket exists ===
+        // === Step 1: Ensure inbox-media bucket exists ===
         const { data: buckets } = await supabase.storage.listBuckets();
         const bucketExists = buckets?.some(b => b.id === 'inbox-media');
 
@@ -64,72 +74,145 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        // === Step 2: Clean up files older than 2 days ===
-        const twoDaysAgo = new Date();
-        twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+        // === Step 2: Clean up inbox-media files older than 6 HOURS ===
+        const sixHoursAgo = new Date();
+        sixHoursAgo.setHours(sixHoursAgo.getHours() - 6);
 
-        // List all folders in inbox/
-        const { data: userFolders } = await supabase.storage
-            .from('inbox-media')
-            .list('inbox', { limit: 1000 });
+        results.inboxDeleted = await cleanupBucket(supabase, 'inbox-media', 'inbox', sixHoursAgo);
 
-        if (userFolders && userFolders.length > 0) {
-            for (const folder of userFolders) {
-                // List files in each user folder
-                const { data: files } = await supabase.storage
-                    .from('inbox-media')
-                    .list(`inbox/${folder.name}`, { limit: 1000 });
+        // === Step 3: Clean up wa-status files older than 24 HOURS ===
+        // wa-status files are only needed for broadcasting, once posted they can be deleted
+        const oneDayAgo = new Date();
+        oneDayAgo.setDate(oneDayAgo.getDate() - 1);
 
-                if (!files || files.length === 0) continue;
+        results.statusDeleted = await cleanupBucket(supabase, 'wa-status', '', oneDayAgo);
 
-                // Filter files older than 2 days
-                const oldFiles = files.filter(file => {
-                    if (!file.created_at) return false;
-                    return new Date(file.created_at) < twoDaysAgo;
-                });
-
-                if (oldFiles.length === 0) continue;
-
-                // Delete old files
-                const filePaths = oldFiles.map(f => `inbox/${folder.name}/${f.name}`);
-                const { error: delErr } = await supabase.storage
-                    .from('inbox-media')
-                    .remove(filePaths);
-
-                if (delErr) {
-                    console.error(`[Cleanup] Delete error for ${folder.name}:`, delErr.message);
-                    results.errors += oldFiles.length;
-                } else {
-                    results.deleted += oldFiles.length;
-                    console.log(`[Cleanup] ✅ Deleted ${oldFiles.length} files from inbox/${folder.name}`);
-                }
-            }
-        }
-
-        // === Step 3: Also null out media_url in messages older than 2 days ===
-        // So the UI shows placeholder instead of broken image
-        const { error: updateErr } = await supabase
+        // === Step 4: Null out media_url in old messages ===
+        // Use the same 6-hour window so UI shows placeholder instead of broken image
+        const { data: updatedMessages, error: updateErr } = await supabase
             .from('messages')
             .update({ media_url: null })
             .not('media_url', 'is', null)
-            .lt('created_at', twoDaysAgo.toISOString());
+            .lt('created_at', sixHoursAgo.toISOString())
+            .select('id');
 
         if (updateErr) {
             console.error('[Cleanup] Messages update error:', updateErr.message);
         } else {
-            console.log('[Cleanup] ✅ Cleared media_url from old messages');
+            results.messagesCleared = updatedMessages?.length || 0;
+            console.log(`[Cleanup] ✅ Cleared media_url from ${results.messagesCleared} old messages`);
         }
+
+        const totalDeleted = results.inboxDeleted + results.statusDeleted;
+        console.log(`[Cleanup] ✅ DONE — inbox: ${results.inboxDeleted}, wa-status: ${results.statusDeleted}, messages: ${results.messagesCleared}`);
 
         return NextResponse.json({
             success: true,
-            message: `Cleaned up ${results.deleted} files, ${results.errors} errors`,
+            message: `Cleaned ${totalDeleted} files (inbox: ${results.inboxDeleted}, wa-status: ${results.statusDeleted}), messages cleared: ${results.messagesCleared}`,
             ...results,
-            messagesCleared: true,
         });
     } catch (error: any) {
         console.error('[Cleanup] Error:', error.message);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
+}
+
+/**
+ * Generic bucket cleanup: recursively list and delete files older than cutoff date.
+ * Handles nested folder structures (e.g., inbox/user_id/file.jpg or tenant_id/file.jpg).
+ */
+async function cleanupBucket(
+    supabase: any,
+    bucketName: string,
+    rootPrefix: string,
+    cutoffDate: Date
+): Promise<number> {
+    let totalDeleted = 0;
+
+    try {
+        // List root-level items (could be folders or files)
+        const listPath = rootPrefix || '';
+        const { data: items, error: listErr } = await supabase.storage
+            .from(bucketName)
+            .list(listPath, { limit: 1000 });
+
+        if (listErr) {
+            console.error(`[Cleanup] List error for ${bucketName}/${listPath}:`, listErr.message);
+            return 0;
+        }
+
+        if (!items || items.length === 0) return 0;
+
+        // Separate files and folders
+        const files = items.filter((item: any) => item.id); // Files have an id
+        const folders = items.filter((item: any) => !item.id); // Folders don't have an id
+
+        // Delete old files at this level
+        if (files.length > 0) {
+            const oldFiles = files.filter((file: any) => {
+                if (!file.created_at) return false;
+                return new Date(file.created_at) < cutoffDate;
+            });
+
+            if (oldFiles.length > 0) {
+                const filePaths = oldFiles.map((f: any) =>
+                    listPath ? `${listPath}/${f.name}` : f.name
+                );
+
+                // Delete in batches of 100
+                for (let i = 0; i < filePaths.length; i += 100) {
+                    const batch = filePaths.slice(i, i + 100);
+                    const { error: delErr } = await supabase.storage
+                        .from(bucketName)
+                        .remove(batch);
+
+                    if (delErr) {
+                        console.error(`[Cleanup] Delete error in ${bucketName}/${listPath}:`, delErr.message);
+                    } else {
+                        totalDeleted += batch.length;
+                        console.log(`[Cleanup] ✅ Deleted ${batch.length} files from ${bucketName}/${listPath || '(root)'}`);
+                    }
+                }
+            }
+        }
+
+        // Recurse into folders
+        for (const folder of folders) {
+            const folderPath = listPath ? `${listPath}/${folder.name}` : folder.name;
+            const { data: subFiles } = await supabase.storage
+                .from(bucketName)
+                .list(folderPath, { limit: 1000 });
+
+            if (!subFiles || subFiles.length === 0) continue;
+
+            const oldSubFiles = subFiles.filter((file: any) => {
+                if (!file.created_at) return false;
+                return new Date(file.created_at) < cutoffDate;
+            });
+
+            if (oldSubFiles.length === 0) continue;
+
+            const subPaths = oldSubFiles.map((f: any) => `${folderPath}/${f.name}`);
+
+            for (let i = 0; i < subPaths.length; i += 100) {
+                const batch = subPaths.slice(i, i + 100);
+                const { error: delErr } = await supabase.storage
+                    .from(bucketName)
+                    .remove(batch);
+
+                if (delErr) {
+                    console.error(`[Cleanup] Delete error in ${bucketName}/${folderPath}:`, delErr.message);
+                } else {
+                    totalDeleted += batch.length;
+                    console.log(`[Cleanup] ✅ Deleted ${batch.length} files from ${bucketName}/${folderPath}`);
+                }
+            }
+        }
+    } catch (err: any) {
+        console.error(`[Cleanup] Exception in ${bucketName}:`, err.message);
+    }
+
+    return totalDeleted;
 }
 
 /**
@@ -164,7 +247,30 @@ export async function GET(request: NextRequest) {
             }
         }
 
-        // Create bucket
+        // If action=purge, do an immediate aggressive cleanup (delete ALL files)
+        if (action === 'purge') {
+            let totalPurged = 0;
+            const epoch = new Date(); // cutoff = now = delete everything
+
+            totalPurged += await cleanupBucket(supabase, 'inbox-media', 'inbox', epoch);
+            totalPurged += await cleanupBucket(supabase, 'wa-status', '', epoch);
+
+            // Also clear media_url from all messages
+            const { data: clearedMsgs } = await supabase
+                .from('messages')
+                .update({ media_url: null })
+                .not('media_url', 'is', null)
+                .select('id');
+
+            return NextResponse.json({
+                success: true,
+                message: `🗑️ PURGED ${totalPurged} files, cleared ${clearedMsgs?.length || 0} message media URLs`,
+                filesPurged: totalPurged,
+                messagesPurged: clearedMsgs?.length || 0,
+            });
+        }
+
+        // Default: Create bucket
         const { data: buckets } = await supabase.storage.listBuckets();
         const exists = buckets?.some(b => b.id === 'inbox-media');
 

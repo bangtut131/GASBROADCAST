@@ -33,12 +33,25 @@ export async function POST(request: NextRequest) {
         const storagePath = `${profile.tenant_id}/${Date.now()}-${safeName}`;
 
         // Convert File to ArrayBuffer for upload
-        const buffer = await file.arrayBuffer();
+        // Compress images before upload to save storage
+        let buffer = Buffer.from(await file.arrayBuffer());
+        let uploadMimeType = file.type;
+
+        if (file.type.startsWith('image/')) {
+            try {
+                const { compressImageBuffer } = await import('@/lib/image-compress');
+                const compressed = await compressImageBuffer(buffer, file.type, { maxSizeKB: 500 });
+                buffer = compressed.buffer;
+                uploadMimeType = compressed.mimeType;
+            } catch (compressErr: any) {
+                console.warn('[Upload] WA Status image compression skipped:', compressErr.message);
+            }
+        }
 
         const { error: uploadError } = await supabase.storage
             .from('wa-status')
             .upload(storagePath, buffer, {
-                contentType: file.type,
+                contentType: uploadMimeType,
                 upsert: false,
             });
 

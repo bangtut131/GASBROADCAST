@@ -48,12 +48,26 @@ export async function POST(request: NextRequest) {
         const filePath = `inbox/${user.id}/${filename}`;
 
         // Upload to Supabase Storage (use service client to bypass RLS)
+        // Compress images before upload to save storage
         const supabase = await createServiceClient();
-        const buffer = Buffer.from(await file.arrayBuffer());
+        let buffer = Buffer.from(await file.arrayBuffer());
+        let uploadMimeType = file.type;
+
+        if (file.type.startsWith('image/')) {
+            try {
+                const { compressImageBuffer } = await import('@/lib/image-compress');
+                const compressed = await compressImageBuffer(buffer, file.type, { maxSizeKB: 300 });
+                buffer = compressed.buffer;
+                uploadMimeType = compressed.mimeType;
+            } catch (compressErr: any) {
+                console.warn('[Upload] Image compression skipped:', compressErr.message);
+            }
+        }
+
         const { data: uploadData, error: uploadError } = await supabase.storage
             .from('inbox-media')
             .upload(filePath, buffer, {
-                contentType: file.type,
+                contentType: uploadMimeType,
                 upsert: false,
             });
 
