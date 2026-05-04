@@ -12,7 +12,7 @@ import {
 interface Category { id: string; name: string; color: string; icon: string; content_count: number }
 interface Content { id: string; type: 'image' | 'video' | 'text'; title: string | null; content_url: string | null; caption: string | null; category_id: string | null; category?: Category; tags: string[]; use_count: number; last_used_at: string | null; created_at: string }
 interface Device { id: string; name: string; phone_number: string | null; status: string }
-interface Schedule { id: string; name: string; device_id: string; device?: Device; device_ids?: string[]; devices?: Device[]; mode: string; times_of_day: string[]; days_of_week: number[]; category_ids: string[]; content_ids: string[]; window_start: string; window_end: string; cooldown_days: number; caption_template: string | null; caption_templates: string[]; is_active: boolean; last_posted_at: string | null; total_posted: number }
+interface Schedule { id: string; name: string; device_id: string; device?: Device; device_ids?: string[]; devices?: Device[]; mode: string; times_of_day: string[]; days_of_week: number[]; category_ids: string[]; content_ids: string[]; window_start: string; window_end: string; cooldown_days: number; caption_template: string | null; caption_templates: string[]; excluded_contacts: string[]; is_active: boolean; last_posted_at: string | null; total_posted: number }
 interface Log { id: string; content_id: string; schedule_id: string; device?: Device; status: string; error_message: string | null; posted_at: string }
 
 type ActiveTab = 'library' | 'schedules' | 'history';
@@ -54,6 +54,7 @@ export default function WAStatusPage() {
         days_of_week: [0, 1, 2, 3, 4, 5, 6],
         window_start: '07:00', window_end: '21:00',
         cooldown_days: 3, caption_template: '', caption_templates: [''] as string[],
+        excluded_contacts: [] as string[],  // [UPGRADE] hide status from these phone numbers
     });
     const [saving, setSaving] = useState(false);
 
@@ -219,6 +220,7 @@ export default function WAStatusPage() {
             cooldown_days: s.cooldown_days,
             caption_template: s.caption_template || '',
             caption_templates: s.caption_templates?.length > 0 ? [...s.caption_templates] : [s.caption_template || ''],
+            excluded_contacts: [...(s.excluded_contacts || [])],  // [UPGRADE]
         });
         setShowAddSchedule(true);
     };
@@ -424,11 +426,12 @@ export default function WAStatusPage() {
                                                 ))}
                                             </div>
 
-                                            <div style={{ display: 'flex', gap: 'var(--space-4)', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
+                                            <div style={{ display: 'flex', gap: 'var(--space-4)', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', flexWrap: 'wrap' }}>
                                                 <span>🕐 Window: {s.window_start} – {s.window_end}</span>
                                                 <span>🔄 Cooldown: {s.cooldown_days} hari</span>
                                                 <span>📤 Total dikirim: {s.total_posted}</span>
                                                 {s.last_posted_at && <span>⏱️ Terakhir: {new Date(s.last_posted_at).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>}
+                                                {(s.excluded_contacts?.length > 0) && <span style={{ color: 'var(--color-warning)' }}>🚫 {s.excluded_contacts.length} kontak di-hide</span>}
                                             </div>
                                         </div>
 
@@ -809,6 +812,22 @@ export default function WAStatusPage() {
                                 </div>
                                 <span className="form-hint" style={{ marginTop: 8 }}>Override caption konten. Variabel: {'{sapaan}'}, {'{hari}'}, {'{tanggal}'}, {'{jam}'}, {'{judul}'}, {'{caption}'}</span>
                                 <span className="form-hint">Jika mode <b>Random</b>, caption akan diambil acak. Jika mode <b>Kustom / Sequence</b>, caption ditarik berurutan (Round Robin).</span>
+                            </div>
+
+                            {/* [UPGRADE] Hide Status from Specific Contacts */}
+                            <div className="form-group">
+                                <label className="form-label">🚫 Hide Status dari Kontak (opsional)</label>
+                                <textarea 
+                                    className="form-input" 
+                                    style={{ minHeight: 60, resize: 'vertical' }}
+                                    placeholder="Masukkan nomor telepon, satu per baris.&#10;Contoh:&#10;6281234567890&#10;6289876543210" 
+                                    value={schedForm.excluded_contacts.join('\n')} 
+                                    onChange={e => {
+                                        const numbers = e.target.value.split('\n').map(n => n.trim()).filter(Boolean);
+                                        setSchedForm(f => ({ ...f, excluded_contacts: numbers }));
+                                    }} 
+                                />
+                                <span className="form-hint">Kontak di atas TIDAK akan menerima status dari jadwal ini. Kosongkan jika ingin semua kontak melihat status.</span>
                             </div>
                         </div>
 

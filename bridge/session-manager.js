@@ -855,14 +855,15 @@ export async function batchSendStatusImage(mediaUrl, caption, deviceEntries) {
             await new Promise(r => setTimeout(r, DEVICE_DELAY));
         }
 
-        const { sessionId, contacts } = entry;
+        // [UPGRADE] excludeContacts is optional — existing callers don't send it → defaults to [] in buildStatusJidList
+        const { sessionId, contacts, excludeContacts } = entry;
         const session = sessions.get(sessionId);
         if (!session || session.status !== 'connected') {
             console.log(`[Batch] ⏭️ ${sessionId} skipped (not connected)`);
             return { sessionId, success: false, error: 'Not connected' };
         }
         try {
-            const statusJids = buildStatusJidList(session, contacts || []);
+            const statusJids = buildStatusJidList(session, contacts || [], excludeContacts || []);
             console.log(`[Batch] ⏳ ${sessionId} (device ${index + 1}/${deviceEntries.length}) posting to ${statusJids.length} contacts...`);
             // Clone buffer for each device to prevent potential mutation by Baileys
             const deviceBuffer = Buffer.from(buffer);
@@ -899,14 +900,15 @@ export async function batchSendStatusVideo(mediaUrl, caption, deviceEntries) {
             await new Promise(r => setTimeout(r, DEVICE_DELAY));
         }
 
-        const { sessionId, contacts } = entry;
+        // [UPGRADE] excludeContacts is optional — existing callers don't send it → defaults to [] in buildStatusJidList
+        const { sessionId, contacts, excludeContacts } = entry;
         const session = sessions.get(sessionId);
         if (!session || session.status !== 'connected') {
             console.log(`[Batch] ⏭️ ${sessionId} skipped (not connected)`);
             return { sessionId, success: false, error: 'Not connected' };
         }
         try {
-            const statusJids = buildStatusJidList(session, contacts || []);
+            const statusJids = buildStatusJidList(session, contacts || [], excludeContacts || []);
             console.log(`[Batch] ⏳ ${sessionId} (device ${index + 1}/${deviceEntries.length}) posting to ${statusJids.length} contacts...`);
             // Clone buffer for each device to prevent potential mutation by Baileys
             const deviceBuffer = Buffer.from(buffer);
@@ -937,15 +939,24 @@ export async function batchSendStatusVideo(mediaUrl, caption, deviceEntries) {
 // contact list (synced via Baileys events) to determine who can see the status.
 // WhatsApp's own privacy rules still apply: recipients must have your number saved.
 // extraContacts is kept as fallback but should normally be empty.
-export function buildStatusJidList(session, extraContacts = []) {
+// [UPGRADE] excludeContacts: optional phone numbers to HIDE status from (default=[] → no change to existing behavior)
+export function buildStatusJidList(session, extraContacts = [], excludeContacts = []) {
     const myJid = formatJid(session.socket.user.id.split(':')[0]);
     const seen = new Set([myJid]);
     const jids = [myJid];
 
+    // [UPGRADE] Build exclude set only when excludeContacts is provided
+    const excludeSet = excludeContacts.length > 0
+        ? new Set(excludeContacts.map(c => formatJid(c)))
+        : null;
+    if (excludeSet) {
+        console.log(`[${session.sessionId}] 🚫 Excluding ${excludeSet.size} contacts from status visibility`);
+    }
+
     // Device contacts (auto-collected from phone book via Baileys events)
     // This IS the native WA contact list — same as what WA Web uses
     for (const jid of session.deviceContacts || []) {
-        if (!seen.has(jid)) { seen.add(jid); jids.push(jid); }
+        if (!seen.has(jid) && (!excludeSet || !excludeSet.has(jid))) { seen.add(jid); jids.push(jid); }
     }
 
     // Also try to resolve @lid contacts via LID store
@@ -955,7 +966,7 @@ export function buildStatusJidList(session, extraContacts = []) {
         if (existsSync(lidStorePath)) {
             const lidMap = JSON.parse(readFileSync(lidStorePath, 'utf8'));
             for (const [lid, jid] of Object.entries(lidMap)) {
-                if (typeof jid === 'string' && jid.endsWith('@s.whatsapp.net') && !seen.has(jid)) {
+                if (typeof jid === 'string' && jid.endsWith('@s.whatsapp.net') && !seen.has(jid) && (!excludeSet || !excludeSet.has(jid))) {
                     seen.add(jid);
                     jids.push(jid);
                 }
@@ -966,10 +977,11 @@ export function buildStatusJidList(session, extraContacts = []) {
     // Extra contacts (fallback — normally empty in native mode)
     for (const c of extraContacts) {
         const formatted = formatJid(c);
-        if (!seen.has(formatted)) { seen.add(formatted); jids.push(formatted); }
+        if (!seen.has(formatted) && (!excludeSet || !excludeSet.has(formatted))) { seen.add(formatted); jids.push(formatted); }
     }
 
-    console.log(`[${session.sessionId}] Status JID list: ${jids.length} total (${session.deviceContacts?.size || 0} device contacts + self, native mode)`);
+    const excludeInfo = excludeSet ? `, ${excludeSet.size} excluded` : '';
+    console.log(`[${session.sessionId}] Status JID list: ${jids.length} total (${session.deviceContacts?.size || 0} device contacts + self${excludeInfo}, native mode)`);
     if (jids.length <= 1) {
         console.error(`[${session.sessionId}] ❌ CRITICAL: Status will be posted to SELF ONLY (0 device contacts)!`);
         console.error(`[${session.sessionId}] ❌ This means NO ONE can see your status. You need to:`);
@@ -979,6 +991,7 @@ export function buildStatusJidList(session, extraContacts = []) {
     }
     return jids;
 }
+
 
 // Helper: Convert hex color string to ARGB uint32
 function hexToArgb(hex) {

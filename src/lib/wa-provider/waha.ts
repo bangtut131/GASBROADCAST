@@ -171,13 +171,14 @@ export class WAHAProvider implements WAProvider {
     // ==================== WA Status / Stories ====================
     // These use dedicated WAHA status endpoints instead of regular messaging
 
-    async sendStatusText(sessionId: string, text: string, backgroundColor?: string, font?: number, contacts?: string[]): Promise<SendResult> {
+    async sendStatusText(sessionId: string, text: string, backgroundColor?: string, font?: number, contacts?: string[], excludeContacts?: string[]): Promise<SendResult> {
         try {
             const data = await this.request('POST', `/api/${sessionId}/status/text`, {
                 text,
                 backgroundColor: backgroundColor || '#1D4ED8',
                 font: font || 1,
                 contacts: contacts?.map(c => c.includes('@') ? c : `${c}@c.us`),
+                excludeContacts: excludeContacts || [],  // [UPGRADE] pass to bridge
             });
             return { success: true, messageId: data?.id };
         } catch (error: any) {
@@ -214,12 +215,13 @@ export class WAHAProvider implements WAProvider {
     // Batch fire-and-forget: bridge responds immediately, processes in background
     async batchSendStatusImage(
         mediaUrl: string, caption: string,
-        devices: { sessionId: string; contacts: string[] }[],
+        devices: { sessionId: string; contacts: string[]; excludeContacts?: string[] }[],
         callbackUrl?: string, jobId?: string,
     ): Promise<{ accepted: boolean }> {
         const formattedDevices = devices.map(d => ({
             sessionId: d.sessionId,
             contacts: d.contacts.map(c => c.includes('@') ? c : `${c}@c.us`),
+            excludeContacts: d.excludeContacts || [],  // [UPGRADE] pass to bridge
         }));
         await this.request('POST', '/api/status/batch/image', {
             mediaUrl, caption, devices: formattedDevices, callbackUrl, jobId,
@@ -229,12 +231,13 @@ export class WAHAProvider implements WAProvider {
 
     async batchSendStatusVideo(
         mediaUrl: string, caption: string,
-        devices: { sessionId: string; contacts: string[] }[],
+        devices: { sessionId: string; contacts: string[]; excludeContacts?: string[] }[],
         callbackUrl?: string, jobId?: string,
     ): Promise<{ accepted: boolean }> {
         const formattedDevices = devices.map(d => ({
             sessionId: d.sessionId,
             contacts: d.contacts.map(c => c.includes('@') ? c : `${c}@c.us`),
+            excludeContacts: d.excludeContacts || [],  // [UPGRADE] pass to bridge
         }));
         await this.request('POST', '/api/status/batch/video', {
             mediaUrl, caption, devices: formattedDevices, callbackUrl, jobId,

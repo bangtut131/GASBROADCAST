@@ -283,14 +283,14 @@ app.post('/api/sendVideo', auth, async (req, res) => {
 // POST /api/{session}/status/video
 
 app.post('/api/:session/status/text', auth, async (req, res) => {
-    const { text, backgroundColor, font, contacts } = req.body;
+    const { text, backgroundColor, font, contacts, excludeContacts } = req.body;  // [UPGRADE] excludeContacts is optional
     if (!text) return res.status(400).json({ error: 'text required' });
 
     // Quick self-registration first (guarantees status visible on sender's device)
     const session = getSessionInternal(req.params.session);
     if (!session || session.status !== 'connected') return res.status(500).json({ error: 'Not connected' });
 
-    const statusJids = buildStatusJidListExternal(session, contacts || []);
+    const statusJids = buildStatusJidListExternal(session, contacts || [], excludeContacts || []);
     const myJid = statusJids[0];
     const contactJids = statusJids.slice(1);
 
@@ -324,14 +324,14 @@ app.post('/api/:session/status/text', auth, async (req, res) => {
 });
 
 app.post('/api/:session/status/image', auth, async (req, res) => {
-    const { file, caption, contacts } = req.body;
+    const { file, caption, contacts, excludeContacts } = req.body;  // [UPGRADE] excludeContacts is optional
     const mediaUrl = file?.url;
     if (!mediaUrl) return res.status(400).json({ error: 'file.url required' });
 
     const session = getSessionInternal(req.params.session);
     if (!session || session.status !== 'connected') return res.status(500).json({ error: 'Not connected' });
 
-    const statusJids = buildStatusJidListExternal(session, contacts || []);
+    const statusJids = buildStatusJidListExternal(session, contacts || [], excludeContacts || []);
     const myJid = statusJids[0];
     const contactJids = statusJids.slice(1);
 
@@ -362,14 +362,14 @@ app.post('/api/:session/status/image', auth, async (req, res) => {
 });
 
 app.post('/api/:session/status/video', auth, async (req, res) => {
-    const { file, caption, contacts } = req.body;
+    const { file, caption, contacts, excludeContacts } = req.body;  // [UPGRADE] excludeContacts is optional
     const mediaUrl = file?.url;
     if (!mediaUrl) return res.status(400).json({ error: 'file.url required' });
 
     const session = getSessionInternal(req.params.session);
     if (!session || session.status !== 'connected') return res.status(500).json({ error: 'Not connected' });
 
-    const statusJids = buildStatusJidListExternal(session, contacts || []);
+    const statusJids = buildStatusJidListExternal(session, contacts || [], excludeContacts || []);
     const myJid = statusJids[0];
     const contactJids = statusJids.slice(1);
 

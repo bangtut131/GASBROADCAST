@@ -140,6 +140,7 @@ export async function POST(request: NextRequest) {
                 const deviceEntries = connectedDevices.map(d => ({
                     sessionId: d.session_id,
                     contacts: [],  // Empty — bridge uses device contacts automatically (native approach)
+                    excludeContacts: schedule.excluded_contacts || [],  // [UPGRADE] hide status from these contacts
                 }));
 
                 if (content.type === 'image') {
@@ -205,7 +206,7 @@ export async function POST(request: NextRequest) {
             for (const device of connectedDevices) {
                 try {
                     const devProvider = getProvider(device.provider, device.provider_config as Record<string, string>);
-                    const result = await devProvider.sendStatusText(device.session_id, caption || content.caption || '', '#1D4ED8', 1, []);  // Empty — bridge uses device contacts (native)
+                    const result = await devProvider.sendStatusText(device.session_id, caption || content.caption || '', '#1D4ED8', 1, [], schedule.excluded_contacts || []);  // [UPGRADE] pass excludeContacts
 
                     await supabase.from('status_logs').insert({
                         tenant_id: device.tenant_id,

@@ -66,6 +66,7 @@ export async function POST(request: NextRequest) {
             name, device_id, device_ids, mode, category_ids, content_ids, times_of_day,
             days_of_week, window_start, window_end, timezone,
             cooldown_days, caption_template, caption_templates,
+            excluded_contacts,  // [UPGRADE] optional — hide status from these phone numbers
         } = body;
 
         // Support both single device_id and multi device_ids
@@ -95,6 +96,7 @@ export async function POST(request: NextRequest) {
                 cooldown_days: cooldown_days ?? 3,
                 caption_template: caption_template || null,
                 caption_templates: caption_templates || [],
+                excluded_contacts: excluded_contacts || [],  // [UPGRADE] hide from these contacts
                 is_active: true,
             })
             .select()
