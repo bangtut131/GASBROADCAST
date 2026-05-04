@@ -80,12 +80,9 @@ export async function POST(request: NextRequest) {
 
         results.inboxDeleted = await cleanupBucket(supabase, 'inbox-media', 'inbox', sixHoursAgo);
 
-        // === Step 3: Clean up wa-status files older than 24 HOURS ===
-        // wa-status files are only needed for broadcasting, once posted they can be deleted
-        const oneDayAgo = new Date();
-        oneDayAgo.setDate(oneDayAgo.getDate() - 1);
-
-        results.statusDeleted = await cleanupBucket(supabase, 'wa-status', '', oneDayAgo);
+        // NOTE: wa-status bucket is NOT cleaned up here!
+        // Status content files are reused by scheduled broadcasts repeatedly.
+        // Only inbox-media (incoming messages) should be auto-deleted.
 
         // === Step 4: Null out media_url in old messages ===
         // Use the same 6-hour window so UI shows placeholder instead of broken image
@@ -253,7 +250,7 @@ export async function GET(request: NextRequest) {
             const epoch = new Date(); // cutoff = now = delete everything
 
             totalPurged += await cleanupBucket(supabase, 'inbox-media', 'inbox', epoch);
-            totalPurged += await cleanupBucket(supabase, 'wa-status', '', epoch);
+            // wa-status NOT purged — content files are reused by scheduled broadcasts
 
             // Also clear media_url from all messages
             const { data: clearedMsgs } = await supabase
